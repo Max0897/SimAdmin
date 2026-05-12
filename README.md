@@ -68,7 +68,7 @@ SimAdmin 是一套面向 Debian 蜂窝 CPE、随身 WiFi、软路由类设备的
 
 ## 免责声明
 
-本项目会直接操作蜂窝 modem、SIM 注册、数据拨号、APN、频段、飞行模式、iptables、NetworkManager、systemd 服务、系统重启和 OTA 文件替换。
+本项目会直接操作蜂窝 modem、SIM 注册、数据拨号、APN、频段、飞行模式、NetworkManager、systemd 服务、系统重启和 OTA 文件替换；iptables/ip6tables 仅用于只读诊断，不会自动清空宿主机防火墙规则。
 
 请仅在你拥有控制权的设备上使用。错误配置可能导致断网、无法注册网络、SIM 漫游计费、设备需要手动恢复，甚至 OTA 后服务无法启动。任何使用本项目造成的后果由使用者自行承担。
 
@@ -266,7 +266,7 @@ curl -fsSL https://raw.githubusercontent.com/3899/SimAdmin/main/uninstall.sh \
 - system D-Bus。
 - ModemManager 和 `mmcli`。
 - 建议安装 `qmicli`，用于基站信息兜底读取。
-- `iptables` / `ip6tables`，用于连接看门狗清理异常规则。
+- `iptables` / `ip6tables`，用于只读网络诊断；SimAdmin 不会自动清空宿主机防火墙规则。
 - `tar`，OTA 安装必需。
 - `unzip`，仅在上传 zip 格式 OTA 包时需要。
 
@@ -323,7 +323,7 @@ journalctl -u simadmin -f
 - 数据连接开关和漫游策略持久化。
 - 飞行模式控制。
 - 基带重启流程和进度查询。
-- 数据连接 watchdog，每 15 秒检查连接状态、iptables 规则和 modem 可用性。
+- 数据连接 watchdog，每 15 秒检查连接状态、iptables 规则数量和 modem 可用性；检测到宿主机防火墙规则时仅记录诊断日志，不自动清空规则。
 - ModemManager 丢失时触发 `mmcli --scan-modems`，连续失败后重启 ModemManager。
 - NetworkManager `wwan*` unmanaged 配置。
 - 设备侧 WLAN 客户端连接管理，通过 NetworkManager/nmcli 扫描和连接无线局域网，WLAN 在线时优先作为设备默认出口。
@@ -334,6 +334,25 @@ journalctl -u simadmin -f
 - OTA 上传、在线下载、校验、替换二进制和前端资源。
 
 ## 🚀 版本更新记录
+
+### 📌 v1.0.4
+
+#### 🐞 bug 修复
+
+- 修正 DDNS 模块 IPv6 公网地址判断逻辑，前后端统一以公网域 IPv6 作为 AAAA 记录候选地址，避免误选链路本地地址、内网 ULA 地址。
+- IPv6 地址候选按 `/128` 优先排序，提升多 IPv6 地址场景下 DDNS 自动选择地址的准确性。
+- 修复宿主机 `FORWARD` 默认策略为 `DROP` 时，清空 filter 表规则引发 Docker 网桥转发失效、外部无法访问容器映射端口的问题。
+
+#### 💫 体验优化
+
+- 抽象封装前端通用 IPv6 公网地址筛选工具，仪表盘连接展示、设备网络 DDNS 接口统一复用同一套判定规则。
+- 数据连接看门狗保留蜂窝状态巡检与 Modem 自愈能力，不再自动清空宿主机 iptables/ip6tables 规则，避免影响 Docker、VPN 及容器端口映射等业务。
+- 切换蜂窝数据连接时取消全局防火墙规则刷新，减少对宿主机网络栈、容器转发链路的副作用。
+
+#### 📚 接口与文档更新
+
+- 明确 NetworkManager `wwan*` 非托管配置仅用于防止蜂窝接口被双重管理，不会直接修改 iptables 规则。
+- 同步更新 README 及 Bruno 接口示例，标注 `iptables/ip6tables` 仅作只读诊断使用，程序不会自动清空宿主机防火墙规则。
 
 ### 📌 v1.0.3
 
@@ -830,7 +849,7 @@ SQLite 数据库保存：
 - `mmcli`
 - `NetworkManager` / `nmcli`
 - `qmicli`
-- `iptables` / `ip6tables`
+- `iptables` / `ip6tables`（只读诊断）
 - `systemctl`
 - `tar`
 - `unzip`

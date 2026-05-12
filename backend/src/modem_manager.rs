@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tracing::{info, warn};
 use zbus::{
-    zvariant::{OwnedObjectPath, OwnedValue, Value},
     Connection, Proxy,
+    zvariant::{OwnedObjectPath, OwnedValue, Value},
 };
 
 use crate::config::ConfigManager;
@@ -135,11 +135,7 @@ fn extract_string_list(value: &OwnedValue) -> Vec<String> {
         return v;
     }
     let s = extract_string(value);
-    if s.is_empty() {
-        Vec::new()
-    } else {
-        vec![s]
-    }
+    if s.is_empty() { Vec::new() } else { vec![s] }
 }
 
 fn first_quoted_value(text: &str) -> Option<String> {
@@ -1344,7 +1340,7 @@ pub async fn get_cells_data(conn: &Connection) -> zbus::Result<CellsResponse> {
     let cells: Vec<HashMap<String, OwnedValue>> = match proxy.call("GetCellInfo", &()).await {
         Ok(v) => v,
         Err(e) if is_get_cellinfo_unsupported(&e) => {
-            return get_cells_data_mmcli_fallback(conn, &modem_path).await
+            return get_cells_data_mmcli_fallback(conn, &modem_path).await;
         }
         Err(e) => return Err(e),
     };
@@ -2004,11 +2000,7 @@ async fn set_modem_enabled(
     enabled: bool,
 ) -> Result<i32, String> {
     let desired_ready = |state: i32| {
-        if enabled {
-            state >= 6
-        } else {
-            state == 3
-        }
+        if enabled { state >= 6 } else { state == 3 }
     };
 
     for attempt in 0..5 {
@@ -3349,10 +3341,10 @@ pub async fn data_connection_watchdog(
     airplane_requested: std::sync::Arc<AtomicBool>,
     config: std::sync::Arc<ConfigManager>,
 ) {
-    use crate::iptables::{flush_iptables, get_iptables_rule_count};
+    use crate::iptables::get_iptables_rule_count;
 
     let mut last_log = String::new();
-    let mut last_iptables_action = false;
+    let mut iptables_rules_logged = false;
     let mut missing_count = 0u32;
     let mut scan_requested_for_outage = false;
     let mut last_modem_restart_at: Option<Instant> = None;
@@ -3378,14 +3370,15 @@ pub async fn data_connection_watchdog(
         match get_iptables_rule_count().await {
             Ok(count) => {
                 if count.has_rules() {
-                    if let Err(err) = flush_iptables().await {
-                        warn!(error = %err, "Watchdog: iptables flush failed");
-                    } else if !last_iptables_action {
-                        info!(total = count.total(), "Watchdog: iptables flushed");
-                        last_iptables_action = true;
+                    if !iptables_rules_logged {
+                        info!(
+                            total = count.total(),
+                            "Watchdog: iptables rules detected; automatic flush is disabled"
+                        );
+                        iptables_rules_logged = true;
                     }
                 } else {
-                    last_iptables_action = false;
+                    iptables_rules_logged = false;
                 }
             }
             Err(err) => warn!(error = %err, "Watchdog: iptables check failed"),
@@ -3503,7 +3496,9 @@ pub async fn data_connection_watchdog(
                                     tokio::time::sleep(Duration::from_secs(3)).await;
                                     match set_modem_enabled(&conn, &modem_path, true).await {
                                         Ok(_) => "Transition stuck, cycled radio state".to_string(),
-                                        Err(err) => format!("Transition stuck, re-enable failed: {err}"),
+                                        Err(err) => {
+                                            format!("Transition stuck, re-enable failed: {err}")
+                                        }
                                     }
                                 }
                                 Err(err) => format!("Transition stuck, disable failed: {err}"),

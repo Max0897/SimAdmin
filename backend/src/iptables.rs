@@ -1,6 +1,8 @@
-//! iptables 操作模块
+//! Read-only iptables diagnostics.
 //!
-//! 提供 iptables 规则检查和清空功能
+//! SimAdmin must not flush host firewall rules automatically. Container
+//! runtimes, VPNs, firewalld, ufw, and other host services own rules in these
+//! tables too, so this module only inspects state for logging/diagnostics.
 
 use std::process::Command;
 use tokio::task;
@@ -66,53 +68,13 @@ pub async fn get_iptables_rule_count() -> Result<IptablesRuleCount, String> {
     .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
-/// 清空所有 iptables 规则
-///
-/// 执行等同于 `iptables -F` 的操作，清空 filter 表的所有链
-///
-/// # Returns
-/// * `Ok(())` - 成功清空规则
-/// * `Err(String)` - 操作失败的错误信息
-///
-/// # 说明
-/// 此函数会清空以下链的规则：
-/// - INPUT 链
-/// - FORWARD 链
-/// - OUTPUT 链
-pub async fn flush_iptables() -> Result<(), String> {
-    task::spawn_blocking(|| {
-        // 清空 filter 表的所有规则
-        let outputv4 = Command::new("iptables")
-            .arg("-F")
-            .output()
-            .map_err(|e| format!("Failed to execute ip6tables: {}", e))?;
-        if !outputv4.status.success() {
-            let stderr = String::from_utf8_lossy(&outputv4.stderr);
-            return Err(format!("iptables -F failed: {}", stderr));
-        }
-        let outputv6 = Command::new("ip6tables")
-            .arg("-F")
-            .output()
-            .map_err(|e| format!("Failed to execute ip6tables: {}", e))?;
-        if !outputv6.status.success() {
-            let stderr = String::from_utf8_lossy(&outputv6.stderr);
-            return Err(format!("ip6tables -F failed: {}", stderr));
-        }
-
-        Ok(())
-    })
-    .await
-    .map_err(|e| format!("Task execution failed: {}", e))?
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore] // 需要 root 权限，默认忽略
-    async fn test_flush_iptables() {
-        let result = flush_iptables().await;
+    async fn test_get_iptables_rule_count_is_non_destructive() {
+        let result = get_iptables_rule_count().await;
         assert!(result.is_ok());
     }
 }

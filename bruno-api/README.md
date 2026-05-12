@@ -15,13 +15,13 @@
 
 ### 数据连接接口
 - **get_data_status.bru** - 获取数据连接状态
-- **set_data_status_enable.bru** - 启用数据连接（自动清空 iptables 规则）
-- **set_data_status_disable.bru** - 禁用数据连接（自动清空 iptables 规则）
+- **set_data_status_enable.bru** - 启用数据连接
+- **set_data_status_disable.bru** - 禁用数据连接
 - **get_roaming_status.bru** - 获取漫游状态（是否允许漫游、当前是否漫游）
 - **set_roaming_enable.bru** - 启用漫游数据
 - **set_roaming_disable.bru** - 禁用漫游数据
 
-**注意**：每次切换数据连接状态时，系统会自动执行 `iptables -F` 清空防火墙规则，确保网络配置处于干净状态。
+**注意**：切换数据连接状态不会清空宿主机 iptables/ip6tables 规则，避免影响 Docker、VPN、防火墙等宿主机网络配置。
 
 **漫游说明**：插入境外 SIM 卡时，如果网络注册状态为 `roaming`，需要启用漫游开关才能使用数据连接。
 

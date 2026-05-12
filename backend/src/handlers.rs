@@ -3,21 +3,20 @@
 //! 包含所有 HTTP API 的处理函数
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use serde_json::json;
 use std::fs;
 use std::process::{Command, Output};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tracing::{error, info, warn};
 use zbus::Connection;
 
 use crate::{
-    iptables::flush_iptables,
     models::*,
     modem_manager::{
         answer_call, apply_roaming_policy, get_airplane_mode, get_band_lock_status,
@@ -821,7 +820,6 @@ pub async fn set_data_status(
     Json(payload): Json<DataConnectionRequest>,
 ) -> impl IntoResponse {
     let allow_roaming = app.config_manager.get_roaming_allowed();
-    let _ = flush_iptables().await;
     match set_data_connection(&app.dbus_conn, payload.active, allow_roaming).await {
         Ok(_) => {
             if let Err(err) = app.config_manager.set_data_enabled(payload.active) {
