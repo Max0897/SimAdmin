@@ -432,6 +432,7 @@ export interface WebhookConfig {
 export type NotificationChannelKey =
   | 'webhook'
   | 'bark'
+  | 'pushplus'
   | 'wecom_app'
   | 'wecom_robot'
   | 'dingtalk_robot'
@@ -461,6 +462,16 @@ export interface BarkConfig extends MessageChannelConfig {
   copy: string
   auto_copy: boolean
   save_history: boolean
+}
+
+export interface PushPlusConfig extends MessageChannelConfig {
+  token: string
+  title_template: string
+  topic: string
+  template: string
+  channel: string
+  option: string
+  callback_url: string
 }
 
 export interface WecomAppConfig extends MessageChannelConfig {
@@ -510,6 +521,7 @@ export interface TelegramConfig extends MessageChannelConfig {
 export interface NotificationConfig {
   webhook: WebhookConfig
   bark: BarkConfig
+  pushplus: PushPlusConfig
   wecom_app: WecomAppConfig
   wecom_robot: WecomRobotConfig
   dingtalk_robot: DingtalkRobotConfig

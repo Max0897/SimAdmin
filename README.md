@@ -337,6 +337,10 @@ journalctl -u simadmin -f
 
 ### 📌 v1.0.4
 
+#### ✨ 新增功能
+
+- 通知中心新增 PushPlus 通知渠道，支持配置 Token、标题模板、群组编码、消息模板、发送渠道、渠道参数和回调地址，并接入短信、DDNS 事件转发及测试发送。
+
 #### 🐞 bug 修复
 
 - 修正 DDNS 模块 IPv6 公网地址判断逻辑，前后端统一以公网域 IPv6 作为 AAAA 记录候选地址，避免误选链路本地地址、内网 ULA 地址。
@@ -884,6 +888,8 @@ SQLite 数据库保存：
 
 ## 🎖️ 鸣谢
 
-> - 本项目基于开源项目 `1orz/project-cpe` 进行深度重构适配和二次开发，在此向原作者、贡献者及开源社区致以诚挚谢意。
+### 📦 参考项目
 
-> - 项目 DDNS 功能设计参考了开源项目 `jeessy2/ddns-go`。`ddns-go` 是一个简单易用的动态 DNS 工具，支持阿里云、腾讯云 DNSPod、Cloudflare 等多个主流解析服务商，为动态公网 IP 场景下的域名自动解析提供了成熟实践，特此致谢。
+- [project-cpe](https://github.com/1orz/project-cpe)
+- [SmsForwarder](https://github.com/pppscn/SmsForwarder)
+- [ddns-go](https://github.com/jeessy2/ddns-go)

@@ -1,7 +1,7 @@
 use crate::config::{
     BarkConfig, ConfigManager, DingtalkAppConfig, DingtalkRobotConfig, FeishuRobotConfig,
-    MessageChannelConfig, NotificationChannel, NotificationConfig, TelegramConfig, WebhookConfig,
-    WecomAppConfig, WecomRobotConfig,
+    MessageChannelConfig, NotificationChannel, NotificationConfig, PushPlusConfig, TelegramConfig,
+    WebhookConfig, WecomAppConfig, WecomRobotConfig,
 };
 use crate::db::{CallRecord, SmsMessage};
 use crate::models::DdnsEvent;
@@ -127,6 +127,10 @@ impl NotificationSender {
                 self.send_webhook_sms(&config.webhook, message, force).await
             }
             NotificationChannel::Bark => self.send_bark_sms(&config.bark, message, force).await,
+            NotificationChannel::PushPlus => {
+                self.send_pushplus_sms(&config.pushplus, message, force)
+                    .await
+            }
             NotificationChannel::WecomApp => {
                 self.send_wecom_app_sms(&config.wecom_app, message, force)
                     .await
@@ -166,6 +170,9 @@ impl NotificationSender {
                 self.send_webhook_call(&config.webhook, call, force).await
             }
             NotificationChannel::Bark => self.send_bark_call(&config.bark, call, force).await,
+            NotificationChannel::PushPlus => {
+                self.send_pushplus_call(&config.pushplus, call, force).await
+            }
             NotificationChannel::WecomApp => {
                 self.send_wecom_app_call(&config.wecom_app, call, force)
                     .await
@@ -201,6 +208,7 @@ impl NotificationSender {
         match channel {
             NotificationChannel::Webhook => self.send_webhook_ddns(&config.webhook, event).await,
             NotificationChannel::Bark => self.send_bark_ddns(&config.bark, event).await,
+            NotificationChannel::PushPlus => self.send_pushplus_ddns(&config.pushplus, event).await,
             NotificationChannel::WecomApp => {
                 self.send_wecom_app_ddns(&config.wecom_app, event).await
             }
@@ -400,6 +408,78 @@ impl NotificationSender {
         );
 
         self.post_json("Bark", &url, Value::Object(payload)).await
+    }
+
+    async fn send_pushplus_sms(
+        &self,
+        config: &PushPlusConfig,
+        message: &SmsMessage,
+        force: bool,
+    ) -> Result<String, String> {
+        if !should_send_sms(&config.common, force) {
+            return Ok("PushPlus skipped".to_string());
+        }
+
+        let title = render_sms_template(&config.title_template, message, false);
+        let content = render_sms_template(&config.common.sms_template, message, false);
+        self.send_pushplus_message(config, title, content).await
+    }
+
+    async fn send_pushplus_call(
+        &self,
+        config: &PushPlusConfig,
+        call: &CallRecord,
+        force: bool,
+    ) -> Result<String, String> {
+        if !should_send_call(&config.common, force) {
+            return Ok("PushPlus skipped".to_string());
+        }
+
+        let content = render_call_template(&config.common.call_template, call, false);
+        self.send_pushplus_message(config, "SimAdmin 来电通知".to_string(), content)
+            .await
+    }
+
+    async fn send_pushplus_ddns(
+        &self,
+        config: &PushPlusConfig,
+        event: &DdnsEvent,
+    ) -> Result<String, String> {
+        if !should_send_ddns(&config.common) {
+            return Ok("PushPlus skipped".to_string());
+        }
+
+        let content = render_ddns_template(&config.common.ddns_template, event, false);
+        self.send_pushplus_message(config, "SimAdmin DDNS 通知".to_string(), content)
+            .await
+    }
+
+    async fn send_pushplus_message(
+        &self,
+        config: &PushPlusConfig,
+        title: String,
+        content: String,
+    ) -> Result<String, String> {
+        if config.token.trim().is_empty() {
+            return Err("PushPlus token is not configured".to_string());
+        }
+
+        let mut payload = Map::new();
+        payload.insert("token".to_string(), json!(config.token.trim()));
+        payload.insert("title".to_string(), json!(title));
+        payload.insert("content".to_string(), json!(content));
+        insert_non_empty(&mut payload, "topic", &config.topic);
+        insert_non_empty(&mut payload, "template", &config.template);
+        insert_non_empty(&mut payload, "channel", &config.channel);
+        insert_non_empty(&mut payload, "option", &config.option);
+        insert_non_empty(&mut payload, "callbackUrl", &config.callback_url);
+
+        self.post_json(
+            "PushPlus",
+            "https://www.pushplus.plus/send",
+            Value::Object(payload),
+        )
+        .await
     }
 
     async fn send_wecom_app_sms(
@@ -934,6 +1014,7 @@ impl NotificationChannel {
         match self {
             NotificationChannel::Webhook => "Webhook",
             NotificationChannel::Bark => "Bark",
+            NotificationChannel::PushPlus => "PushPlus",
             NotificationChannel::WecomApp => "企业微信应用消息",
             NotificationChannel::WecomRobot => "企业微信群机器人",
             NotificationChannel::DingtalkRobot => "钉钉群自定义机器人",
@@ -944,10 +1025,11 @@ impl NotificationChannel {
     }
 }
 
-fn all_channels() -> [NotificationChannel; 8] {
+fn all_channels() -> [NotificationChannel; 9] {
     [
         NotificationChannel::Webhook,
         NotificationChannel::Bark,
+        NotificationChannel::PushPlus,
         NotificationChannel::WecomApp,
         NotificationChannel::WecomRobot,
         NotificationChannel::DingtalkRobot,

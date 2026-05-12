@@ -81,6 +81,26 @@ pub struct BarkConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PushPlusConfig {
+    #[serde(flatten)]
+    pub common: MessageChannelConfig,
+    #[serde(default)]
+    pub token: String,
+    #[serde(default = "default_sms_title_template")]
+    pub title_template: String,
+    #[serde(default)]
+    pub topic: String,
+    #[serde(default = "default_pushplus_template")]
+    pub template: String,
+    #[serde(default)]
+    pub channel: String,
+    #[serde(default)]
+    pub option: String,
+    #[serde(default)]
+    pub callback_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WecomAppConfig {
     #[serde(flatten)]
     pub common: MessageChannelConfig,
@@ -175,6 +195,8 @@ pub struct NotificationConfig {
     #[serde(default)]
     pub bark: BarkConfig,
     #[serde(default)]
+    pub pushplus: PushPlusConfig,
+    #[serde(default)]
     pub wecom_app: WecomAppConfig,
     #[serde(default)]
     pub wecom_robot: WecomRobotConfig,
@@ -193,6 +215,7 @@ pub struct NotificationConfig {
 pub enum NotificationChannel {
     Webhook,
     Bark,
+    PushPlus,
     WecomApp,
     WecomRobot,
     DingtalkRobot,
@@ -299,6 +322,10 @@ fn default_bark_server_url() -> String {
     "https://api.day.app".to_string()
 }
 
+fn default_pushplus_template() -> String {
+    "txt".to_string()
+}
+
 fn default_wecom_to_user() -> String {
     "@all".to_string()
 }
@@ -353,6 +380,21 @@ impl Default for BarkConfig {
             copy: String::new(),
             auto_copy: false,
             save_history: true,
+        }
+    }
+}
+
+impl Default for PushPlusConfig {
+    fn default() -> Self {
+        Self {
+            common: MessageChannelConfig::default(),
+            token: String::new(),
+            title_template: default_sms_title_template(),
+            topic: String::new(),
+            template: default_pushplus_template(),
+            channel: String::new(),
+            option: String::new(),
+            callback_url: String::new(),
         }
     }
 }
@@ -436,6 +478,7 @@ impl Default for NotificationConfig {
         Self {
             webhook: WebhookConfig::default(),
             bark: BarkConfig::default(),
+            pushplus: PushPlusConfig::default(),
             wecom_app: WecomAppConfig::default(),
             wecom_robot: WecomRobotConfig::default(),
             dingtalk_robot: DingtalkRobotConfig::default(),

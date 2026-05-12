@@ -54,6 +54,7 @@ import ErrorSnackbar from '../components/ErrorSnackbar'
 const CHANNEL_KEYS: NotificationChannelKey[] = [
   'webhook',
   'bark',
+  'pushplus',
   'wecom_app',
   'wecom_robot',
   'dingtalk_robot',
@@ -65,6 +66,7 @@ const CHANNEL_KEYS: NotificationChannelKey[] = [
 const CHANNEL_DEFS = [
   { key: 'webhook', label: 'Webhook', icon: Webhook },
   { key: 'bark', label: 'Bark', icon: PhoneIphone },
+  { key: 'pushplus', label: 'PushPlus', icon: NotificationsActive },
   { key: 'wecom_app', label: '企业微信应用消息', icon: Business },
   { key: 'wecom_robot', label: '企业微信群机器人', icon: Groups },
   { key: 'dingtalk_robot', label: '钉钉群自定义机器人', icon: Forum },
@@ -181,6 +183,16 @@ function createDefaultNotificationConfig(): NotificationConfig {
       auto_copy: false,
       save_history: true,
     },
+    pushplus: {
+      ...baseMessageConfig(),
+      token: '',
+      title_template: 'SimAdmin 短信通知',
+      topic: '',
+      template: 'txt',
+      channel: '',
+      option: '',
+      callback_url: '',
+    },
     wecom_app: {
       ...baseMessageConfig(),
       corp_id: '',
@@ -253,6 +265,7 @@ function mergeNotificationConfig(config?: NotificationConfig): NotificationConfi
   return {
     webhook: { ...defaults.webhook, ...config.webhook, headers: config.webhook?.headers ?? {} },
     bark: { ...defaults.bark, ...config.bark },
+    pushplus: { ...defaults.pushplus, ...config.pushplus },
     wecom_app: { ...defaults.wecom_app, ...config.wecom_app },
     wecom_robot: { ...defaults.wecom_robot, ...config.wecom_robot },
     dingtalk_robot: { ...defaults.dingtalk_robot, ...config.dingtalk_robot },
@@ -279,6 +292,7 @@ function normalizeNotificationConfig(config?: NotificationConfig): NotificationC
       ddns_template: merged.webhook.ddns_template,
     }),
     bark: withTemplateDisplay(merged.bark),
+    pushplus: withTemplateDisplay(merged.pushplus),
     wecom_app: withTemplateDisplay(merged.wecom_app),
     wecom_robot: withTemplateDisplay(merged.wecom_robot),
     dingtalk_robot: withTemplateDisplay(merged.dingtalk_robot),
@@ -292,6 +306,7 @@ function getBackendNotificationConfig(config: NotificationConfig): NotificationC
   return {
     webhook: withTemplateBackend(config.webhook),
     bark: withTemplateBackend(config.bark),
+    pushplus: withTemplateBackend(config.pushplus),
     wecom_app: withTemplateBackend(config.wecom_app),
     wecom_robot: withTemplateBackend(config.wecom_robot),
     dingtalk_robot: withTemplateBackend(config.dingtalk_robot),
@@ -307,6 +322,8 @@ function isChannelConfigured(channel: NotificationChannelKey, config: Notificati
       return Boolean(config.webhook.url.trim())
     case 'bark':
       return Boolean(config.bark.device_key.trim())
+    case 'pushplus':
+      return Boolean(config.pushplus.token.trim())
     case 'wecom_app':
       return Boolean(config.wecom_app.corp_id.trim() && config.wecom_app.agent_id.trim() && config.wecom_app.secret.trim())
     case 'wecom_robot':
@@ -761,6 +778,74 @@ export default function NotificationCenterPage() {
     </>
   )
 
+  const renderPushPlusFields = () => (
+    <>
+      <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: '1fr 1fr' }} gap={2} mb={2}>
+        <TextField
+          label="Token"
+          value={config.pushplus.token}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => patchChannel('pushplus', { token: event.target.value })}
+          type="password"
+          disabled={!config.pushplus.enabled}
+        />
+        <TextField
+          label="标题模板"
+          value={config.pushplus.title_template}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => patchChannel('pushplus', { title_template: event.target.value })}
+          disabled={!config.pushplus.enabled}
+        />
+        <TextField
+          label="Topic"
+          value={config.pushplus.topic}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => patchChannel('pushplus', { topic: event.target.value })}
+          disabled={!config.pushplus.enabled}
+        />
+        <TextField
+          select
+          label="Template"
+          value={config.pushplus.template}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => patchChannel('pushplus', { template: event.target.value })}
+          disabled={!config.pushplus.enabled}
+        >
+          <MenuItem value="">默认</MenuItem>
+          <MenuItem value="txt">txt</MenuItem>
+          <MenuItem value="html">html</MenuItem>
+          <MenuItem value="markdown">markdown</MenuItem>
+          <MenuItem value="json">json</MenuItem>
+        </TextField>
+        <TextField
+          select
+          label="Channel"
+          value={config.pushplus.channel}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => patchChannel('pushplus', { channel: event.target.value })}
+          disabled={!config.pushplus.enabled}
+        >
+          <MenuItem value="">默认</MenuItem>
+          <MenuItem value="wechat">wechat</MenuItem>
+          <MenuItem value="webhook">webhook</MenuItem>
+          <MenuItem value="cp">cp</MenuItem>
+          <MenuItem value="mail">mail</MenuItem>
+          <MenuItem value="sms">sms</MenuItem>
+          <MenuItem value="bark">bark</MenuItem>
+          <MenuItem value="gotify">gotify</MenuItem>
+        </TextField>
+        <TextField
+          label="Option"
+          value={config.pushplus.option}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => patchChannel('pushplus', { option: event.target.value })}
+          disabled={!config.pushplus.enabled}
+        />
+        <TextField
+          label="Callback URL"
+          value={config.pushplus.callback_url}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => patchChannel('pushplus', { callback_url: event.target.value })}
+          disabled={!config.pushplus.enabled}
+        />
+      </Box>
+      {renderSmsTemplateEditor('pushplus')}
+    </>
+  )
+
   const renderWecomAppFields = () => (
     <>
       <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: '1fr 1fr' }} gap={2} mb={2}>
@@ -999,6 +1084,8 @@ export default function NotificationCenterPage() {
         return renderWebhookFields()
       case 'bark':
         return renderBarkFields()
+      case 'pushplus':
+        return renderPushPlusFields()
       case 'wecom_app':
         return renderWecomAppFields()
       case 'wecom_robot':
