@@ -128,7 +128,7 @@ async fn spa_fallback(uri: Uri) -> Response {
 fn ensure_modemmanager_debug_override() {
     let override_dir = "/etc/systemd/system/ModemManager.service.d";
     let override_file = "/etc/systemd/system/ModemManager.service.d/99-simadmin-debug.conf";
-    
+
     let desired_content = "\
 # SimAdmin: enable ModemManager debug mode so that Modem.Command D-Bus
 # interface is available for AT+CRSM (SIM file read) and AT+CSCA? (SMSC query).
@@ -465,6 +465,10 @@ async fn main() -> Result<()> {
         .route(
             "/api/network/interfaces",
             get(get_network_interfaces_info).options(options_handler),
+        )
+        .route(
+            "/api/network/connection-addresses",
+            get(get_network_connection_addresses).options(options_handler),
         )
         .route(
             "/api/device-network/ddns/config",

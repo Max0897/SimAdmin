@@ -273,6 +273,10 @@ export interface IpAddress {
 export interface NetworkInterfaceInfo {
   name: string
   status: string
+  is_wireless?: boolean
+  is_cellular?: boolean
+  is_default_ipv4?: boolean
+  is_default_ipv6?: boolean
   mac_address?: string
   mtu: number
   ip_addresses: IpAddress[]
@@ -287,6 +291,13 @@ export interface NetworkInterfaceInfo {
 export interface NetworkInterfacesResponse {
   interfaces: NetworkInterfaceInfo[]
   total_count: number
+}
+
+export interface ConnectionAddressesResponse {
+  ipv4: string[]
+  ipv6: string[]
+  ipv4_interface?: string
+  ipv6_interface?: string
 }
 
 export type RadioMode = 'auto' | 'lte' | 'nr'

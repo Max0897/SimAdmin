@@ -14,6 +14,7 @@ import type {
   CellLockResult,
   CellLockStatusResponse,
   CellsResponse,
+  ConnectionAddressesResponse,
   ConnectivityCheckResponse,
   DataConnectionRequest,
   DataConnectionStatus,
@@ -309,6 +310,10 @@ class SimAdminCurrentAPI {
 
   async getNetworkInterfaces() {
     return request<ApiResponse<NetworkInterfacesResponse>>('/network/interfaces')
+  }
+
+  async getNetworkConnectionAddresses() {
+    return request<ApiResponse<ConnectionAddressesResponse>>('/network/connection-addresses')
   }
 
   async getSignalStrength() {

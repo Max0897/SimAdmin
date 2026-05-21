@@ -20,7 +20,10 @@ use crate::models::{
     WlanStatusResponse,
 };
 use crate::notification::NotificationSender;
-use crate::utils::read_network_interfaces;
+use crate::utils::{
+    interface_addresses_for_family, preferred_interface_for_family, read_network_interfaces,
+    NetworkAddressFamily,
+};
 
 const DDNS_LOG_LIMIT: usize = 50;
 const WLAN_ROUTE_METRIC: &str = "100";
@@ -390,27 +393,24 @@ fn extract_ip_from_text(text: &str, record_type: &str) -> Option<String> {
     None
 }
 
-async fn get_ip_from_interface(ip_config: &DdnsIpConfig, record_type: &str) -> Result<String, String> {
+async fn get_ip_from_interface(
+    ip_config: &DdnsIpConfig,
+    record_type: &str,
+) -> Result<String, String> {
     let interfaces = read_network_interfaces(None).await?;
-    let iface = interfaces
-        .iter()
-        .find(|iface| {
-            if !ip_config.interface_name.trim().is_empty() && iface.name != ip_config.interface_name
-            {
-                return false;
-            }
-
-            if ip_config.interface_name.trim().is_empty()
-                && iface.status.to_ascii_lowercase() == "down"
-            {
-                return false;
-            }
-
-            !ddns_interface_addresses_for_record(&iface.ip_addresses, record_type).is_empty()
+    let family = NetworkAddressFamily::from_ddns_record_type(record_type)
+        .ok_or_else(|| format!("unsupported DDNS record type: {record_type}"))?;
+    let iface = if ip_config.interface_name.trim().is_empty() {
+        preferred_interface_for_family(&interfaces, family)
+    } else {
+        interfaces.iter().find(|iface| {
+            iface.name == ip_config.interface_name
+                && !interface_addresses_for_family(&iface.ip_addresses, family).is_empty()
         })
-        .ok_or_else(|| "no matching network interface found".to_string())?;
+    }
+    .ok_or_else(|| "no matching network interface found".to_string())?;
 
-    ddns_interface_addresses_for_record(&iface.ip_addresses, record_type)
+    interface_addresses_for_family(&iface.ip_addresses, family)
         .first()
         .map(|addr| addr.address.clone())
         .ok_or_else(|| format!("no {record_type} address found on {}", iface.name))
@@ -420,24 +420,9 @@ fn ddns_interface_addresses_for_record<'a>(
     addresses: &'a [IpAddress],
     record_type: &str,
 ) -> Vec<&'a IpAddress> {
-    let mut candidates: Vec<&IpAddress> = addresses
-        .iter()
-        .filter(|addr| {
-            if record_type == "A" {
-                return addr.ip_type.eq_ignore_ascii_case("ipv4");
-            }
-
-            record_type == "AAAA"
-                && addr.ip_type.eq_ignore_ascii_case("ipv6")
-                && addr.scope.eq_ignore_ascii_case("public")
-        })
-        .collect();
-
-    if record_type == "AAAA" {
-        candidates.sort_by_key(|addr| if addr.prefix_len == 128 { 0 } else { 1 });
-    }
-
-    candidates
+    NetworkAddressFamily::from_ddns_record_type(record_type)
+        .map(|family| interface_addresses_for_family(addresses, family))
+        .unwrap_or_default()
 }
 
 async fn update_cloudflare(
@@ -1460,6 +1445,119 @@ mod tests {
             .collect();
 
         assert_eq!(candidate_addresses, vec!["2408::128", "2408::64"]);
+    }
+
+    fn test_interface(
+        name: &str,
+        is_wireless: bool,
+        is_cellular: bool,
+        is_default_ipv4: bool,
+        is_default_ipv6: bool,
+        ip_addresses: Vec<IpAddress>,
+    ) -> crate::models::NetworkInterfaceInfo {
+        crate::models::NetworkInterfaceInfo {
+            name: name.to_string(),
+            status: "up".to_string(),
+            is_wireless,
+            is_cellular,
+            is_default_ipv4,
+            is_default_ipv6,
+            mac_address: None,
+            mtu: 1500,
+            ip_addresses,
+            rx_bytes: 0,
+            tx_bytes: 0,
+            rx_packets: 0,
+            tx_packets: 0,
+            rx_errors: 0,
+            tx_errors: 0,
+        }
+    }
+
+    fn ipv4(address: &str) -> IpAddress {
+        IpAddress {
+            address: address.to_string(),
+            prefix_len: 24,
+            ip_type: "ipv4".to_string(),
+            scope: "private".to_string(),
+        }
+    }
+
+    fn public_ipv6(address: &str) -> IpAddress {
+        IpAddress {
+            address: address.to_string(),
+            prefix_len: 64,
+            ip_type: "ipv6".to_string(),
+            scope: "public".to_string(),
+        }
+    }
+
+    #[test]
+    fn ddns_interface_selection_prefers_wireless_default_route() {
+        let interfaces = vec![
+            test_interface("wwan0", false, true, true, true, vec![ipv4("10.11.242.67")]),
+            test_interface(
+                "wlp1s0",
+                true,
+                false,
+                true,
+                false,
+                vec![ipv4("192.168.1.10")],
+            ),
+        ];
+
+        let selected =
+            preferred_interface_for_family(&interfaces, NetworkAddressFamily::Ipv4).unwrap();
+
+        assert_eq!(selected.name, "wlp1s0");
+    }
+
+    #[test]
+    fn ddns_interface_selection_uses_default_route_before_bridge_or_loopback() {
+        let interfaces = vec![
+            test_interface("lo", false, false, false, false, vec![ipv4("127.0.0.1")]),
+            test_interface(
+                "nm-bridge",
+                false,
+                false,
+                false,
+                false,
+                vec![ipv4("192.168.68.1")],
+            ),
+            test_interface("wwan0", false, true, true, true, vec![ipv4("10.11.242.67")]),
+        ];
+
+        let selected =
+            preferred_interface_for_family(&interfaces, NetworkAddressFamily::Ipv4).unwrap();
+
+        assert_eq!(selected.name, "wwan0");
+    }
+
+    #[test]
+    fn ddns_interface_selection_uses_ipv6_default_route_per_record_family() {
+        let interfaces = vec![
+            test_interface(
+                "nm-bridge",
+                false,
+                false,
+                false,
+                false,
+                vec![public_ipv6("2408::68")],
+            ),
+            test_interface(
+                "wwan0",
+                false,
+                true,
+                false,
+                true,
+                vec![public_ipv6("2408::cell")],
+            ),
+        ];
+
+        let selected =
+            preferred_interface_for_family(&interfaces, NetworkAddressFamily::Ipv6).unwrap();
+
+        assert_eq!(selected.name, "wwan0");
     }
 
     #[test]

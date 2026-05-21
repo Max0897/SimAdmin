@@ -650,6 +650,10 @@ pub struct IpAddress {
 pub struct NetworkInterfaceInfo {
     pub name: String,
     pub status: String,
+    pub is_wireless: bool,
+    pub is_cellular: bool,
+    pub is_default_ipv4: bool,
+    pub is_default_ipv6: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mac_address: Option<String>,
     pub mtu: u32,
@@ -666,6 +670,16 @@ pub struct NetworkInterfaceInfo {
 pub struct NetworkInterfacesResponse {
     pub interfaces: Vec<NetworkInterfaceInfo>,
     pub total_count: usize,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct ConnectionAddressesResponse {
+    pub ipv4: Vec<String>,
+    pub ipv6: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ipv4_interface: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ipv6_interface: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize)]

@@ -2,8 +2,10 @@
 //!
 //! 包含系统状态、资源统计和网络接口读取等工具函数
 
-use crate::models::{IpAddress, NetworkInterfaceInfo};
+use crate::models::{ConnectionAddressesResponse, IpAddress, NetworkInterfaceInfo};
+use std::collections::HashSet;
 use std::net::IpAddr;
+use std::path::Path;
 
 /// 从 /proc/meminfo 读取内存信息
 ///
@@ -331,6 +333,37 @@ pub fn get_active_interfaces() -> Result<Vec<String>, String> {
     }
 
     Ok(interfaces)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_default_ipv4_interface_with_lowest_metric() {
+        let route_table = "\
+Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT
+wwan0\t00000000\t44F20B0A\t0003\t0\t0\t700\t00000000\t0\t0\t0
+nm-bridge\t00000000\t0100000A\t0003\t0\t0\t900\t00000000\t0\t0\t0
+nm-bridge\t0044A8C0\t00000000\t0001\t0\t0\t425\t00FFFFFF\t0\t0\t0";
+
+        let interfaces = parse_default_ipv4_interfaces(route_table);
+
+        assert!(interfaces.contains("wwan0"));
+        assert!(!interfaces.contains("nm-bridge"));
+    }
+
+    #[test]
+    fn parses_default_ipv6_interface_and_ignores_loopback_unreachable_route() {
+        let route_table = "\
+00000000000000000000000000000000 00 00000000000000000000000000000000 00 240884710a001592896566044dc0a4f7 000002bc 00000005 00000000 00000003    wwan0
+00000000000000000000000000000000 00 00000000000000000000000000000000 00 00000000000000000000000000000000 ffffffff 00000001 00000000 00200200       lo";
+
+        let interfaces = parse_default_ipv6_interfaces(route_table);
+
+        assert!(interfaces.contains("wwan0"));
+        assert!(!interfaces.contains("lo"));
+    }
 }
 
 /// 从 /proc/stat 解析 CPU 时间
@@ -985,12 +1018,207 @@ fn read_interface_ip_addresses(
     Ok(Vec::new())
 }
 
+fn update_best_default_interface(
+    interfaces: &mut HashSet<String>,
+    best_metric: &mut Option<u32>,
+    interface: &str,
+    metric: u32,
+) {
+    match *best_metric {
+        Some(current_metric) if metric > current_metric => {}
+        Some(current_metric) if metric == current_metric => {
+            interfaces.insert(interface.to_string());
+        }
+        _ => {
+            interfaces.clear();
+            interfaces.insert(interface.to_string());
+            *best_metric = Some(metric);
+        }
+    }
+}
+
+fn parse_default_ipv4_interfaces(route_table: &str) -> HashSet<String> {
+    let mut interfaces = HashSet::new();
+    let mut best_metric = None;
+
+    for line in route_table.lines().skip(1) {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 7 {
+            continue;
+        }
+
+        let interface = fields[0];
+        let destination = fields[1];
+        let flags = u32::from_str_radix(fields[3], 16).unwrap_or(0);
+        let metric = fields[6].parse::<u32>().unwrap_or(u32::MAX);
+
+        if destination == "00000000" && (flags & 0x1) != 0 && metric != u32::MAX {
+            update_best_default_interface(&mut interfaces, &mut best_metric, interface, metric);
+        }
+    }
+
+    interfaces
+}
+
+fn parse_default_ipv6_interfaces(route_table: &str) -> HashSet<String> {
+    let mut interfaces = HashSet::new();
+    let mut best_metric = None;
+
+    for line in route_table.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 10 {
+            continue;
+        }
+
+        let destination = fields[0];
+        let prefix_len = fields[1];
+        let metric = u32::from_str_radix(fields[5], 16).unwrap_or(u32::MAX);
+        let interface = fields[9];
+
+        if destination == "00000000000000000000000000000000"
+            && prefix_len == "00"
+            && interface != "lo"
+            && metric != u32::MAX
+        {
+            update_best_default_interface(&mut interfaces, &mut best_metric, interface, metric);
+        }
+    }
+
+    interfaces
+}
+
+fn read_default_ipv4_interfaces() -> HashSet<String> {
+    std::fs::read_to_string("/proc/net/route")
+        .map(|content| parse_default_ipv4_interfaces(&content))
+        .unwrap_or_default()
+}
+
+fn read_default_ipv6_interfaces() -> HashSet<String> {
+    std::fs::read_to_string("/proc/net/ipv6_route")
+        .map(|content| parse_default_ipv6_interfaces(&content))
+        .unwrap_or_default()
+}
+
+fn is_wireless_interface(interface_path: &Path) -> bool {
+    interface_path.join("wireless").exists() || interface_path.join("phy80211").exists()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NetworkAddressFamily {
+    Ipv4,
+    Ipv6,
+}
+
+impl NetworkAddressFamily {
+    pub fn from_ddns_record_type(record_type: &str) -> Option<Self> {
+        match record_type {
+            "A" => Some(Self::Ipv4),
+            "AAAA" => Some(Self::Ipv6),
+            _ => None,
+        }
+    }
+}
+
+pub fn interface_addresses_for_family(
+    addresses: &[IpAddress],
+    family: NetworkAddressFamily,
+) -> Vec<&IpAddress> {
+    let mut candidates: Vec<&IpAddress> = addresses
+        .iter()
+        .filter(|addr| match family {
+            NetworkAddressFamily::Ipv4 => {
+                addr.ip_type.eq_ignore_ascii_case("ipv4")
+                    && !addr.scope.eq_ignore_ascii_case("loopback")
+                    && !addr.scope.eq_ignore_ascii_case("link-local")
+            }
+            NetworkAddressFamily::Ipv6 => {
+                addr.ip_type.eq_ignore_ascii_case("ipv6")
+                    && addr.scope.eq_ignore_ascii_case("public")
+            }
+        })
+        .collect();
+
+    if family == NetworkAddressFamily::Ipv6 {
+        candidates.sort_by_key(|addr| if addr.prefix_len == 128 { 0 } else { 1 });
+    }
+
+    candidates
+}
+
+pub fn preferred_interface_for_family(
+    interfaces: &[NetworkInterfaceInfo],
+    family: NetworkAddressFamily,
+) -> Option<&NetworkInterfaceInfo> {
+    interfaces
+        .iter()
+        .filter(|iface| {
+            iface.name != "lo"
+                && iface.status.to_ascii_lowercase() != "down"
+                && !interface_addresses_for_family(&iface.ip_addresses, family).is_empty()
+        })
+        .min_by_key(|iface| preferred_interface_priority(iface, family))
+}
+
+fn preferred_interface_priority(
+    iface: &NetworkInterfaceInfo,
+    family: NetworkAddressFamily,
+) -> (u8, &str) {
+    let is_default = match family {
+        NetworkAddressFamily::Ipv4 => iface.is_default_ipv4,
+        NetworkAddressFamily::Ipv6 => iface.is_default_ipv6,
+    };
+
+    let priority = if iface.is_wireless && is_default {
+        0
+    } else if is_default {
+        1
+    } else if iface.is_wireless {
+        2
+    } else if iface.is_cellular {
+        3
+    } else {
+        4
+    };
+
+    (priority, iface.name.as_str())
+}
+
+fn selected_addresses_for_family(
+    interfaces: &[NetworkInterfaceInfo],
+    family: NetworkAddressFamily,
+) -> (Vec<String>, Option<String>) {
+    preferred_interface_for_family(interfaces, family)
+        .map(|iface| {
+            let addresses = interface_addresses_for_family(&iface.ip_addresses, family)
+                .into_iter()
+                .map(|addr| addr.address.clone())
+                .collect();
+            (addresses, Some(iface.name.clone()))
+        })
+        .unwrap_or_default()
+}
+
+pub fn connection_addresses_from_interfaces(
+    interfaces: &[NetworkInterfaceInfo],
+) -> ConnectionAddressesResponse {
+    let (ipv4, ipv4_interface) =
+        selected_addresses_for_family(interfaces, NetworkAddressFamily::Ipv4);
+    let (ipv6, ipv6_interface) =
+        selected_addresses_for_family(interfaces, NetworkAddressFamily::Ipv6);
+
+    ConnectionAddressesResponse {
+        ipv4,
+        ipv6,
+        ipv4_interface,
+        ipv6_interface,
+    }
+}
+
 /// 读取所有网络接口信息
 pub async fn read_network_interfaces(
     conn: Option<&zbus::Connection>,
 ) -> Result<Vec<NetworkInterfaceInfo>, String> {
     use std::fs;
-    use std::path::Path;
 
     let sys_class_net = Path::new("/sys/class/net");
 
@@ -1006,6 +1234,8 @@ pub async fn read_network_interfaces(
     } else {
         std::collections::HashMap::new()
     };
+    let default_ipv4_interfaces = read_default_ipv4_interfaces();
+    let default_ipv6_interfaces = read_default_ipv6_interfaces();
 
     // 遍历所有网络接口
     let entries = fs::read_dir(sys_class_net)
@@ -1015,6 +1245,7 @@ pub async fn read_network_interfaces(
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         let interface_name = entry.file_name().to_string_lossy().to_string();
         let interface_path = entry.path();
+        let is_wireless = is_wireless_interface(&interface_path);
 
         // 读取接口状态
         let mut status = fs::read_to_string(interface_path.join("operstate"))
@@ -1104,9 +1335,16 @@ pub async fn read_network_interfaces(
             }
         }
 
+        let is_default_ipv4 = default_ipv4_interfaces.contains(&interface_name);
+        let is_default_ipv6 = default_ipv6_interfaces.contains(&interface_name);
+
         interfaces.push(NetworkInterfaceInfo {
             name: interface_name,
             status,
+            is_wireless,
+            is_cellular: bearer_stats.is_some(),
+            is_default_ipv4,
+            is_default_ipv6,
             mac_address,
             mtu,
             ip_addresses,

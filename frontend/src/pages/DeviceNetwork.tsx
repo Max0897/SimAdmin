@@ -206,17 +206,26 @@ function interfaceAddressesForFamily(iface: NetworkInterfaceInfo, family: 'ipv4'
 
   return iface.ip_addresses.filter((addr) => {
     if (addr.ip_type !== family) return false
-    return !addr.address.startsWith('127.') && addr.address !== '::1'
+    return addr.scope !== 'loopback' && addr.scope !== 'link-local'
   })
+}
+
+function ddnsInterfacePriority(iface: NetworkInterfaceInfo, family: 'ipv4' | 'ipv6') {
+  const isDefault = family === 'ipv4' ? iface.is_default_ipv4 : iface.is_default_ipv6
+  if (iface.is_wireless && isDefault) return 0
+  if (isDefault) return 1
+  if (iface.is_wireless) return 2
+  if (iface.is_cellular) return 3
+  if (iface.status.toLowerCase() === 'up') return 4
+  return 5
 }
 
 function ddnsInterfaceOptions(interfaces: NetworkInterfaceInfo[], family: 'ipv4' | 'ipv6') {
   return interfaces
     .filter((iface) => iface.name !== 'lo' && interfaceAddressesForFamily(iface, family).length > 0)
     .sort((a, b) => {
-      if (a.status === b.status) return a.name.localeCompare(b.name)
-      if (a.status.toLowerCase() === 'up') return -1
-      if (b.status.toLowerCase() === 'up') return 1
+      const priorityDiff = ddnsInterfacePriority(a, family) - ddnsInterfacePriority(b, family)
+      if (priorityDiff !== 0) return priorityDiff
       return a.name.localeCompare(b.name)
     })
 }

@@ -1572,12 +1572,8 @@ async fn direct_at_ef_smsp_fallback(conn: &Connection) -> String {
     };
 
     // 步骤 1: GET RESPONSE 获取 EF_SMSP 文件信息
-    let info_output = match send_at_via_modem_command(
-        conn,
-        &modem_path,
-        "AT+CRSM=192,28482,0,0,15",
-    )
-    .await
+    let info_output = match send_at_via_modem_command(conn, &modem_path, "AT+CRSM=192,28482,0,0,15")
+        .await
     {
         Ok(output) => output,
         Err(err) => {
@@ -1616,10 +1612,7 @@ async fn direct_at_ef_smsp_fallback(conn: &Connection) -> String {
         Ok(output) => output,
         Err(err) => {
             warn!(error = %err, "EF_SMSP fallback step 2 (Modem.Command) failed, trying direct serial");
-            match with_serial(async {
-                run_direct_at_command_draining(conn, &read_cmd).await
-            })
-            .await
+            match with_serial(async { run_direct_at_command_draining(conn, &read_cmd).await }).await
             {
                 Ok(output) => output,
                 Err(err) => {
@@ -1701,7 +1694,6 @@ pub async fn background_fetch_smsc(conn: &Connection, db: &Database) {
 }
 
 async fn background_fetch_smsc_inner(conn: &Connection, db: &Database) {
-
     let identity = current_sim_identity(conn).await;
     let identity = match identity {
         Some(id) if !id.iccid.is_empty() || !id.imsi.is_empty() => id,
@@ -2657,7 +2649,9 @@ LTE Timing Advance: 'unavailable'"#;
     fn decodes_smsc_from_ts_sca_international() {
         // 长度=8, 类型=0x91(国际), BCD: 68 31 08 20 09 05 F0 → +8613800290500
         // 长度 = 1(类型字节) + 7(BCD字节) = 8
-        let sca = [0x08, 0x91, 0x68, 0x31, 0x08, 0x20, 0x09, 0x05, 0xF0, 0xFF, 0xFF, 0xFF];
+        let sca = [
+            0x08, 0x91, 0x68, 0x31, 0x08, 0x20, 0x09, 0x05, 0xF0, 0xFF, 0xFF, 0xFF,
+        ];
         assert_eq!(decode_smsc_from_ts_sca(&sca), "+8613800290500");
     }
 
@@ -2680,10 +2674,7 @@ LTE Timing Advance: 'unavailable'"#;
         record_hex += "0891683108200905F0FFFFFF"; // TS-SCA: len=8, type=0x91, +8613800290500
         record_hex += "FFFFFF"; // PID + DCS + VP
         let output = format!("+CRSM: 144,0,\"{record_hex}\"");
-        assert_eq!(
-            parse_smsc_from_crsm_record(&output, 40),
-            "+8613800290500"
-        );
+        assert_eq!(parse_smsc_from_crsm_record(&output, 40), "+8613800290500");
     }
 
     #[test]
@@ -2700,13 +2691,9 @@ LTE Timing Advance: 'unavailable'"#;
         record_hex += &"FF".repeat(12);
         record_hex += "0891683108200905F0FFFFFF";
         record_hex += "FFFFFF";
-        let output = format!(
-            "AT+CRSM=178,28482,1,4,40\r\r\n+CRSM: 144,0,\"{record_hex}\"\r\n\r\nOK\r\n"
-        );
-        assert_eq!(
-            parse_smsc_from_crsm_record(&output, 40),
-            "+8613800290500"
-        );
+        let output =
+            format!("AT+CRSM=178,28482,1,4,40\r\r\n+CRSM: 144,0,\"{record_hex}\"\r\n\r\nOK\r\n");
+        assert_eq!(parse_smsc_from_crsm_record(&output, 40), "+8613800290500");
     }
 
     #[test]
@@ -4832,11 +4819,7 @@ async fn run_direct_at_command_draining(
     let device = at_command_device(conn).await?;
     let command = command.to_string();
     tokio::task::spawn_blocking(move || {
-        run_direct_at_command_draining_blocking(
-            &device,
-            &command,
-            SMSC_BACKGROUND_AT_TIMEOUT_SECS,
-        )
+        run_direct_at_command_draining_blocking(&device, &command, SMSC_BACKGROUND_AT_TIMEOUT_SECS)
     })
     .await
     .map_err(|err| format!("AT 命令任务失败：{err}"))?
@@ -5296,7 +5279,9 @@ pub async fn ensure_nm_modem_profile() -> String {
                 .await
             {
                 if status.success() {
-                    let _ = run_recovery_command("systemctl", &["restart", "NetworkManager.service"]).await;
+                    let _ =
+                        run_recovery_command("systemctl", &["restart", "NetworkManager.service"])
+                            .await;
                     // Give NM a moment to come back and discover the modem
                     tokio::time::sleep(Duration::from_secs(3)).await;
                 }
@@ -5400,11 +5385,7 @@ async fn nm_update_connection(
     settings: &SimpleConnectSettings,
     allow_roaming: bool,
 ) -> Result<(), String> {
-    let mut args: Vec<String> = vec![
-        "connection".into(),
-        "modify".into(),
-        profile.into(),
-    ];
+    let mut args: Vec<String> = vec!["connection".into(), "modify".into(), profile.into()];
 
     if let Some(apn) = settings.apn.as_deref().filter(|a| !a.trim().is_empty()) {
         args.push("gsm.apn".into());
@@ -5414,7 +5395,11 @@ async fn nm_update_connection(
         args.push("gsm.username".into());
         args.push(user.trim().into());
     }
-    if let Some(password) = settings.password.as_deref().filter(|p| !p.trim().is_empty()) {
+    if let Some(password) = settings
+        .password
+        .as_deref()
+        .filter(|p| !p.trim().is_empty())
+    {
         args.push("gsm.password".into());
         args.push(password.into());
     }
@@ -5444,11 +5429,7 @@ async fn nm_activate_connection(profile: &str) -> Result<(), String> {
 async fn nm_deactivate_connection(profile: &str) -> Result<(), String> {
     run_recovery_command_owned(
         "nmcli",
-        &[
-            "connection".into(),
-            "down".into(),
-            profile.into(),
-        ],
+        &["connection".into(), "down".into(), profile.into()],
         Duration::from_secs(15),
     )
     .await?;

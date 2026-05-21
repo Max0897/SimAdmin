@@ -21,23 +21,22 @@ use crate::{
     esim::EsimApiError,
     models::*,
     modem_manager::{
-        answer_call, apply_roaming_policy, current_sim_identity, get_airplane_mode,
-        get_band_lock_status, get_baseband_restart_progress, get_call_by_path, get_call_settings,
-        get_cell_location, get_cells_data, get_data_connection_status, get_device_info_data,
-        get_is_roaming_mm, get_network_info_data, get_operators_list, get_radio_mode,
-        get_signal_strength, get_sim_info_data_with_cache, hangup_all_calls, hangup_call,
-        list_apn_contexts, list_current_calls, make_call, power_cycle_sim_for_profile_switch,
+        answer_call, apply_roaming_policy, background_fetch_smsc, current_sim_identity,
+        find_nm_modem_connection_pub, get_airplane_mode, get_band_lock_status,
+        get_baseband_restart_progress, get_call_by_path, get_call_settings, get_cell_location,
+        get_cells_data, get_data_connection_status, get_device_info_data, get_is_roaming_mm,
+        get_network_info_data, get_operators_list, get_radio_mode, get_signal_strength,
+        get_sim_info_data_with_cache, hangup_all_calls, hangup_call, list_apn_contexts,
+        list_current_calls, make_call, nm_set_autoconnect_pub, power_cycle_sim_for_profile_switch,
         register_operator_auto, register_operator_manual, restart_baseband, scan_operators,
         send_sms, set_airplane_mode, set_apn_on_bearer, set_band_lock, set_call_waiting,
-        set_data_connection_with_apn, set_radio_mode, start_cell_monitoring,
-        stop_cell_monitoring, background_fetch_smsc,
-        find_nm_modem_connection_pub, nm_set_autoconnect_pub,
+        set_data_connection_with_apn, set_radio_mode, start_cell_monitoring, stop_cell_monitoring,
     },
     state::AppState,
     utils::{
-        format_uptime, get_active_interfaces, read_cpu_info, read_cpu_load_sync, read_disk_info,
-        read_interface_stats, read_memory_info, read_network_interfaces, read_system_info,
-        read_uptime, sample_cpu_usage,
+        connection_addresses_from_interfaces, format_uptime, get_active_interfaces, read_cpu_info,
+        read_cpu_load_sync, read_disk_info, read_interface_stats, read_memory_info,
+        read_network_interfaces, read_system_info, read_uptime, sample_cpu_usage,
     },
 };
 
@@ -629,7 +628,10 @@ pub async fn update_sim_cache_handler(
 
     (
         StatusCode::OK,
-        Json(ApiResponse::success_with_message("SIM cache updated", json!({}))),
+        Json(ApiResponse::success_with_message(
+            "SIM cache updated",
+            json!({}),
+        )),
     )
 }
 
@@ -1037,7 +1039,9 @@ pub async fn unlock_all_cells_handler(State(app): State<AppState>) -> impl IntoR
 }
 
 /// GET /api/network/interfaces
-pub async fn get_network_interfaces_info(State(dbus_conn): State<Arc<Connection>>) -> impl IntoResponse {
+pub async fn get_network_interfaces_info(
+    State(dbus_conn): State<Arc<Connection>>,
+) -> impl IntoResponse {
     match read_network_interfaces(Some(&dbus_conn)).await {
         Ok(interfaces) => {
             let total_count = interfaces.len();
@@ -1055,6 +1059,28 @@ pub async fn get_network_interfaces_info(State(dbus_conn): State<Arc<Connection>
         Err(e) => (
             StatusCode::OK,
             Json(ApiResponse::<NetworkInterfacesResponse>::error(format!(
+                "Failed: {}",
+                e
+            ))),
+        ),
+    }
+}
+
+/// GET /api/network/connection-addresses
+pub async fn get_network_connection_addresses(
+    State(dbus_conn): State<Arc<Connection>>,
+) -> impl IntoResponse {
+    match read_network_interfaces(Some(&dbus_conn)).await {
+        Ok(interfaces) => (
+            StatusCode::OK,
+            Json(ApiResponse::success_with_message(
+                "Success",
+                connection_addresses_from_interfaces(&interfaces),
+            )),
+        ),
+        Err(e) => (
+            StatusCode::OK,
+            Json(ApiResponse::<ConnectionAddressesResponse>::error(format!(
                 "Failed: {}",
                 e
             ))),

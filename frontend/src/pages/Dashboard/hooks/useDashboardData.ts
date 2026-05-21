@@ -9,9 +9,8 @@ import type {
   SystemStatsResponse,
   AirplaneModeResponse,
   RoamingResponse,
-  NetworkInterfaceInfo,
+  ConnectionAddressesResponse,
 } from '@/api/types'
-import { publicIpv6Addresses } from '@/utils/ip'
 import { isTransientModemError, createThrottledWarner } from '@/utils/modemErrors'
 
 export const SPEED_HISTORY_MAX_POINTS = 30
@@ -46,30 +45,7 @@ export interface ConnectivityResult {
   ipv6: { success: boolean; latency_ms?: number }
 }
 
-export interface ConnectionAddresses {
-  ipv4: string[]
-  ipv6: string[]
-}
-
-function connectionAddressesFromInterfaces(interfaces: NetworkInterfaceInfo[]): ConnectionAddresses {
-  const preferredWlan = interfaces.find(
-    (iface) => iface.status !== 'down' && iface.name === 'wlan0' && iface.ip_addresses.length > 0,
-  )
-  const fallback = interfaces.find((iface) => iface.status !== 'down' && iface.ip_addresses.length > 0)
-  const selected = preferredWlan ?? fallback
-
-  if (!selected) {
-    return { ipv4: [], ipv6: [] }
-  }
-
-  const wlanPublicIpv6 = publicIpv6Addresses(preferredWlan?.ip_addresses ?? [])
-  const fallbackPublicIpv6 = publicIpv6Addresses(selected.ip_addresses)
-
-  return {
-    ipv4: selected.ip_addresses.filter((ip) => ip.ip_type === 'ipv4').map((ip) => ip.address),
-    ipv6: wlanPublicIpv6.length ? wlanPublicIpv6 : fallbackPublicIpv6,
-  }
-}
+export type ConnectionAddresses = ConnectionAddressesResponse
 
 export interface DashboardData {
   deviceInfo: DeviceInfo | null
@@ -161,7 +137,7 @@ export function useDashboardData(refreshInterval: number, refreshKey: number) {
         requestOrNull(api.getNetworkInfo(), 'network'),
         requestOrNull(api.getDataStatus(), 'data'),
         requestOrNull(api.getAirplaneMode(), 'airplane-mode'),
-        requestOrNull(api.getNetworkInterfaces(), 'interfaces'),
+        requestOrNull(api.getNetworkConnectionAddresses(), 'connection-addresses'),
         requestOrNull(api.getRoamingStatus(), 'roaming'),
         requestOrNull(api.getCellsInfo(), 'cells'),
       ])
@@ -177,7 +153,7 @@ export function useDashboardData(refreshInterval: number, refreshKey: number) {
         networkRes,
         dataRes,
         airplaneModeRes,
-        interfacesRes,
+        addressesRes,
         roamingRes,
         cellsRes,
       ] = await fastPromise
@@ -187,7 +163,7 @@ export function useDashboardData(refreshInterval: number, refreshKey: number) {
       if (networkRes?.data) setNetworkInfo(networkRes.data)
       if (dataRes?.data) setDataStatus(dataRes.data.active)
       if (airplaneModeRes?.data) setAirplaneMode(airplaneModeRes.data)
-      if (interfacesRes?.data) setConnectionAddresses(connectionAddressesFromInterfaces(interfacesRes.data.interfaces))
+      if (addressesRes?.data) setConnectionAddresses(addressesRes.data)
       if (roamingRes?.data) setRoaming(roamingRes.data)
       if (cellsRes?.data) setCellsInfo(cellsRes.data)
 
