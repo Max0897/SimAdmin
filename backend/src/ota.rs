@@ -18,9 +18,6 @@ use std::time::Duration;
 
 /// OTA 相关路径
 const OTA_STAGING_DIR: &str = "/tmp/ota_staging";
-const OTA_BINARY_PATH: &str = "/opt/simadmin/simadmin";
-const OTA_WWW_PATH: &str = "/opt/simadmin/www";
-const OTA_META_PATH: &str = "/opt/simadmin/meta.json";
 const OTA_SERVICE_NAME: &str = "simadmin.service";
 const NM_CONF_DIR: &str = "/etc/NetworkManager/conf.d";
 const NM_CONF_PATH: &str = "/etc/NetworkManager/conf.d/99-simadmin-unmanaged-modem.conf";
@@ -35,6 +32,30 @@ const BUILTIN_PROXY_PREFIXES: [&str; 3] = [
     "https://githubproxy.cc/",
 ];
 pub const MAX_OTA_BYTES: u64 = 50 * 1024 * 1024;
+
+#[derive(Debug, PartialEq)]
+struct OtaInstallPaths {
+    binary: PathBuf,
+    www: PathBuf,
+    meta: PathBuf,
+}
+
+fn install_paths_from_executable(executable: &Path) -> Result<OtaInstallPaths, String> {
+    let install_dir = executable
+        .parent()
+        .ok_or_else(|| format!("Cannot determine install directory from {:?}", executable))?;
+    Ok(OtaInstallPaths {
+        binary: executable.to_path_buf(),
+        www: install_dir.join("www"),
+        meta: install_dir.join("meta.json"),
+    })
+}
+
+fn current_install_paths() -> Result<OtaInstallPaths, String> {
+    let executable = std::env::current_exe()
+        .map_err(|e| format!("Failed to locate the running executable: {}", e))?;
+    install_paths_from_executable(&executable)
+}
 
 /// 当前版本信息（编译时注入）
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -525,18 +546,23 @@ fn beijing_offset() -> FixedOffset {
 /// 应用 OTA 更新
 pub fn apply_ota_update(restart_now: bool) -> Result<String, String> {
     let meta = read_pending_meta().ok_or_else(|| "No pending update".to_string())?;
+    let install_paths = current_install_paths()?;
 
-    let staging_binary = format!("{}/simadmin", OTA_STAGING_DIR);
-    let staging_www = format!("{}/www", OTA_STAGING_DIR);
+    let staging_dir = Path::new(OTA_STAGING_DIR);
+    let staging_binary = staging_dir.join("simadmin");
+    let staging_www = staging_dir.join("www");
 
-    install_binary_atomic(&staging_binary, OTA_BINARY_PATH)?;
+    install_binary_atomic(&staging_binary, &install_paths.binary)?;
 
     // 复制前端文件（删除旧目录，复制新目录）
-    let _ = fs::remove_dir_all(OTA_WWW_PATH);
-    copy_dir_recursive(&staging_www, OTA_WWW_PATH)?;
-    chmod_www_tree(OTA_WWW_PATH)?;
+    if install_paths.www.exists() {
+        fs::remove_dir_all(&install_paths.www)
+            .map_err(|e| format!("Failed to remove old frontend directory: {}", e))?;
+    }
+    copy_dir_recursive(&staging_www, &install_paths.www)?;
+    chmod_www_tree(&install_paths.www)?;
 
-    install_meta_file()?;
+    install_meta_file(&install_paths.meta)?;
     let nm_result = configure_networkmanager_modem_unmanaged(restart_now);
 
     // 清理暂存目录
@@ -602,14 +628,13 @@ fn configure_networkmanager_modem_unmanaged(restart_now: bool) -> String {
     }
 }
 
-fn install_binary_atomic(src: &str, dst: &str) -> Result<(), String> {
-    let dst_path = Path::new(dst);
-    let dst_dir = dst_path
+fn install_binary_atomic(src: &Path, dst: &Path) -> Result<(), String> {
+    let dst_dir = dst
         .parent()
-        .ok_or_else(|| format!("Invalid binary path: {}", dst))?;
+        .ok_or_else(|| format!("Invalid binary path: {:?}", dst))?;
     fs::create_dir_all(dst_dir).map_err(|e| format!("Failed to create binary dir: {}", e))?;
 
-    let tmp_path = ota_temp_binary_path(dst_path);
+    let tmp_path = ota_temp_binary_path(dst);
     let _ = fs::remove_file(&tmp_path);
 
     fs::copy(src, &tmp_path).map_err(|e| format!("Failed to copy binary: {}", e))?;
@@ -647,9 +672,10 @@ fn ota_temp_binary_path(dst: &Path) -> PathBuf {
     dst.with_file_name(format!(".{}.ota-new", file_name))
 }
 
-fn chmod_www_tree(path: &str) -> Result<(), String> {
+fn chmod_www_tree(path: &Path) -> Result<(), String> {
     let output = Command::new("chmod")
-        .args(["-R", "a+rX", path])
+        .args(["-R", "a+rX"])
+        .arg(path)
         .output()
         .map_err(|e| format!("Failed to chmod www: {}", e))?;
 
@@ -663,17 +689,18 @@ fn chmod_www_tree(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn install_meta_file() -> Result<(), String> {
-    let staging_meta = format!("{}/meta.json", OTA_STAGING_DIR);
-    if !Path::new(&staging_meta).exists() {
+fn install_meta_file(destination: &Path) -> Result<(), String> {
+    let staging_meta = Path::new(OTA_STAGING_DIR).join("meta.json");
+    if !staging_meta.exists() {
         return Ok(());
     }
 
-    fs::copy(&staging_meta, OTA_META_PATH)
+    fs::copy(&staging_meta, destination)
         .map_err(|e| format!("Failed to copy meta.json: {}", e))?;
 
     let output = Command::new("chmod")
-        .args(["644", OTA_META_PATH])
+        .arg("644")
+        .arg(destination)
         .output()
         .map_err(|e| format!("Failed to chmod meta.json: {}", e))?;
 
@@ -694,7 +721,7 @@ fn restart_service_no_block() {
 }
 
 /// 递归复制目录
-fn copy_dir_recursive(src: &str, dst: &str) -> Result<(), String> {
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| format!("Failed to create dir: {}", e))?;
 
     let entries = fs::read_dir(src).map_err(|e| format!("Failed to read src dir: {}", e))?;
@@ -702,13 +729,10 @@ fn copy_dir_recursive(src: &str, dst: &str) -> Result<(), String> {
     for entry in entries {
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         let src_path = entry.path();
-        let dst_path = Path::new(dst).join(entry.file_name());
+        let dst_path = dst.join(entry.file_name());
 
         if src_path.is_dir() {
-            copy_dir_recursive(
-                src_path.to_str().unwrap_or(""),
-                dst_path.to_str().unwrap_or(""),
-            )?;
+            copy_dir_recursive(&src_path, &dst_path)?;
         } else {
             fs::copy(&src_path, &dst_path).map_err(|e| format!("Failed to copy file: {}", e))?;
         }
@@ -741,6 +765,15 @@ fn detect_zip_format(data: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn install_paths_follow_the_running_executable() {
+        let paths = install_paths_from_executable(Path::new("/srv/simadmin-custom/server"))
+            .expect("install paths");
+        assert_eq!(paths.binary, PathBuf::from("/srv/simadmin-custom/server"));
+        assert_eq!(paths.www, PathBuf::from("/srv/simadmin-custom/www"));
+        assert_eq!(paths.meta, PathBuf::from("/srv/simadmin-custom/meta.json"));
+    }
 
     #[test]
     fn compares_release_tag_versions() {
