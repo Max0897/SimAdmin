@@ -38,7 +38,7 @@ const dataActive = ref(false)
 const airplane = ref(null)
 const authConfigured = ref(false)
 const security = reactive({
-  password_protection_enabled: true, password_min_length: 8, password_require_letters: true,
+  password_protection_enabled: false, password_min_length: 8, password_require_letters: true,
   password_require_digits: true, password_require_symbols: false, session_ttl_seconds: 86400, idle_timeout_seconds: 1800,
 })
 const passwords = reactive({ value: '', confirm: '' })

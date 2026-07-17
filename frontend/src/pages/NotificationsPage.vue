@@ -102,6 +102,7 @@ const channelFields = {
     { key: 'corp_id', label: 'CorpID' }, { key: 'agent_id', label: 'AgentID' },
     { key: 'secret', label: 'Secret', password: true }, { key: 'to_user', label: 'ToUser' },
     { key: 'to_party', label: 'ToParty' }, { key: 'to_tag', label: 'ToTag' },
+    { key: 'api_base_url', label: 'API 反代地址', placeholder: '留空直连企业微信官方 API' },
     { key: 'safe', label: '保密消息', boolean: true },
   ],
   wecom_robot: [
@@ -124,6 +125,7 @@ const channelFields = {
   telegram: [
     { key: 'bot_token', label: 'Bot Token', password: true }, { key: 'chat_id', label: 'Chat ID' },
     { key: 'parse_mode', label: 'Parse Mode', options: ['', 'MarkdownV2', 'HTML'] },
+    { key: 'api_base_url', label: 'API 反代地址', placeholder: '留空直连 Telegram 官方 API' },
     { key: 'disable_web_page_preview', label: '禁用链接预览', boolean: true },
   ],
   email: [
@@ -290,12 +292,12 @@ function defaultChannelConfig(type) {
     webhook: { url: '', secret: '', headers: {} },
     bark: { server_url: 'https://api.day.app', device_key: '', group: '', sound: '', level: '', icon: '', auto_copy: true, save_history: true },
     pushplus: { token: '', topic: '', template: 'txt', channel: '', option: '', callback_url: '' },
-    wecom_app: { corp_id: '', agent_id: '', secret: '', to_user: '@all', to_party: '', to_tag: '', safe: false },
+    wecom_app: { api_base_url: '', corp_id: '', agent_id: '', secret: '', to_user: '@all', to_party: '', to_tag: '', safe: false },
     wecom_robot: { webhook_url: '', key: '' },
     dingtalk_robot: { webhook_url: '', access_token: '', secret: '', at_mobiles: '', at_all: false },
     dingtalk_app: { app_key: '', app_secret: '', robot_code: '', open_conversation_id: '', msg_key: 'sampleText' },
     feishu_robot: { webhook_url: '', token: '', secret: '' },
-    telegram: { bot_token: '', chat_id: '', parse_mode: '', disable_web_page_preview: true },
+    telegram: { api_base_url: '', bot_token: '', chat_id: '', parse_mode: '', disable_web_page_preview: true },
     email: { smtp_host: '', smtp_port: 465, smtp_security: 'implicit_tls', allow_insecure_tls: false, username: '', password: '', sender_address: '', sender_name: '', receiver_addresses: '', message_format: 'plain' },
     serverchan3: { send_key: '', uid: '', channel: '', openid: '' },
   }

@@ -84,6 +84,18 @@ const hasTrafficHistory = computed(() => (
   Math.max(selectedHistory.value.rx.length, selectedHistory.value.tx.length) > 1
 ))
 const temperatures = computed(() => stats.value?.temperature || [])
+function temperaturePercent(value) {
+  const temperature = Number(value)
+  return Number.isFinite(temperature) ? Math.min(Math.max(temperature, 0), 100) : 0
+}
+function temperatureColor(value) {
+  const temperature = Math.max(0, Number(value) || 0)
+  const stepped = Math.round(temperature / 5) * 5
+  const hue = stepped <= 50
+    ? Math.round(193 - (193 - 45) * (stepped / 50))
+    : Math.max(0, Math.round(45 - 45 * ((stepped - 50) / 50)))
+  return `hsl(${hue}, 84%, 60%)`
+}
 const cellRows = computed(() => cells.value?.cells || [])
 const servingCell = computed(() => cells.value?.serving_cell || cellRows.value.find((item) => item.is_serving) || null)
 const chartOption = computed(() => {
@@ -365,7 +377,7 @@ usePolling(load)
           <div v-if="temperatures.length" class="temperature-list">
             <div v-for="(sensor, index) in temperatures" :key="`${sensor.type}-${index}`" class="temperature-row">
               <span>{{ sensor.label || sensor.type }}</span>
-              <NProgress type="line" :percentage="Math.max(0, Math.min(100, Math.round(sensor.temperature)))" :show-indicator="false" :status="sensor.temperature >= 80 ? 'error' : sensor.temperature >= 65 ? 'warning' : 'success'" :height="6" />
+              <NProgress type="line" :percentage="temperaturePercent(sensor.temperature)" :show-indicator="false" :color="temperatureColor(sensor.temperature)" :height="6" />
               <strong class="mono">{{ Number(sensor.temperature).toFixed(1) }}°C</strong>
             </div>
           </div>

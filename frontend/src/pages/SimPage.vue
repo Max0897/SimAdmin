@@ -103,6 +103,9 @@ const smsUsagePercent = computed(() => {
   if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return null
   return Math.min(100, Math.round((used / total) * 100))
 })
+const smsUsageText = computed(() => (
+  smsUsagePercent.value === null ? '-- / -- 条' : `${sim.value.sms_used} / ${sim.value.sms_total} 条`
+))
 const selectedProfile = computed(() => (
   profiles.value.find((profile) => profile.iccid === selectedProfileIccid.value)
   || profiles.value[0]
@@ -274,6 +277,8 @@ async function loadSim(background = false) {
       !sim.value?.phone_numbers?.length
       || !sim.value?.sms_center
       || sim.value?.sms_total === undefined
+      || sim.value?.sms_total === null
+      || Number(sim.value?.sms_total) <= 0
     )
     if (missingSlowFields && sim.value?.iccid && autoDetailsIccid.value !== sim.value.iccid) {
       autoDetailsIccid.value = sim.value.iccid
@@ -772,7 +777,7 @@ onBeforeUnmount(() => {
             <div class="sim-storage">
               <div class="status-line sim-storage__head">
                 <NText>SIM 卡短信容量</NText>
-                <NText depth="3">{{ sim?.sms_used ?? '--' }} / {{ sim?.sms_total ?? '--' }} 条</NText>
+                <NText depth="3">{{ smsUsageText }}</NText>
               </div>
               <NProgress v-if="smsUsagePercent !== null" type="line" :percentage="smsUsagePercent" :status="smsUsagePercent >= 100 ? 'error' : smsUsagePercent > 80 ? 'warning' : 'success'" :height="7" />
               <NProgress v-else type="line" :percentage="0" :show-indicator="false" :height="7" />
