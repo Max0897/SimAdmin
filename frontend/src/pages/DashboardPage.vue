@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   NAlert,
   NCard,
@@ -8,7 +8,9 @@ import {
   NSkeleton,
   NSpace,
   NSwitch,
+  NTabPane,
   NTag,
+  NTabs,
   NText,
   useMessage,
 } from 'naive-ui'
@@ -29,14 +31,14 @@ import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent } from 'echarts/components'
 import { api } from '@/api/index.js'
 import { usePolling } from '@/composables/usePolling.js'
 import MetricCard from '@/components/MetricCard.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { display, errorMessage, formatBytes, formatDuration, formatRate } from '@/utils/format.js'
 
-use([CanvasRenderer, LineChart, GridComponent, LegendComponent, TooltipComponent])
+use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
 
 const message = useMessage()
 const loading = ref(true)
@@ -53,30 +55,70 @@ const connectivity = ref(null)
 const addresses = ref({ ipv4: [], ipv6: [] })
 const speedHistory = ref({})
 const switchLoading = ref('')
+const selectedInterface = ref('wlan0')
 
-const primaryInterface = computed(() => stats.value?.network_speed?.interfaces?.[0] || null)
+const networkInterfaces = computed(() => {
+  const interfaces = [...(stats.value?.network_speed?.interfaces || [])]
+  return interfaces.sort((a, b) => {
+    if (a.interface === 'wlan0') return -1
+    if (b.interface === 'wlan0') return 1
+    return a.interface.localeCompare(b.interface)
+  })
+})
+const selectedInterfaceData = computed(() => (
+  networkInterfaces.value.find((item) => item.interface === selectedInterface.value)
+  || networkInterfaces.value[0]
+  || null
+))
+const selectedHistory = computed(() => (
+  speedHistory.value[selectedInterfaceData.value?.interface] || { rx: [], tx: [] }
+))
+const hasTrafficHistory = computed(() => (
+  Math.max(selectedHistory.value.rx.length, selectedHistory.value.tx.length) > 1
+))
 const temperatures = computed(() => stats.value?.temperature || [])
 const chartOption = computed(() => {
-  const interfaces = Object.entries(speedHistory.value)
-  const palette = ['#0784b5', '#16845b', '#c87916', '#a8558d', '#6b7280', '#ce3e4f']
-  const series = []
-  const legend = []
-  interfaces.forEach(([name, history], index) => {
-    legend.push(`${name} 下载`, `${name} 上传`)
-    series.push(
-      { name: `${name} 下载`, type: 'line', showSymbol: false, smooth: true, data: history.rx, lineStyle: { color: palette[(index * 2) % palette.length], width: 2 } },
-      { name: `${name} 上传`, type: 'line', showSymbol: false, smooth: true, data: history.tx, lineStyle: { color: palette[(index * 2 + 1) % palette.length], width: 2, type: 'dashed' } },
-    )
-  })
+  const history = selectedHistory.value
+  const sampleCount = Math.max(history.rx.length, history.tx.length)
   return {
     animation: false,
-    color: palette,
     tooltip: { trigger: 'axis', valueFormatter: (value) => formatRate(value) },
-    legend: { type: 'scroll', bottom: 0, data: legend, textStyle: { color: 'var(--muted)' } },
-    grid: { top: 18, right: 12, bottom: 42, left: 68 },
-    xAxis: { type: 'category', boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#72808a' } } },
+    grid: { top: 16, right: 12, bottom: 24, left: 68 },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: Array.from({ length: sampleCount }, (_, index) => index + 1),
+      axisLabel: { show: false },
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#72808a' } },
+    },
     yAxis: { type: 'value', axisLabel: { formatter: (value) => formatRate(value) }, splitLine: { lineStyle: { color: '#87929b22' } } },
-    series,
+    series: [
+      {
+        name: '下载',
+        type: 'line',
+        showSymbol: false,
+        smooth: true,
+        data: history.rx,
+        lineStyle: { color: '#16845b', width: 2 },
+        areaStyle: { color: '#16845b', opacity: 0.08 },
+      },
+      {
+        name: '上传',
+        type: 'line',
+        showSymbol: false,
+        smooth: true,
+        data: history.tx,
+        lineStyle: { color: '#0784b5', width: 2 },
+        areaStyle: { color: '#0784b5', opacity: 0.06 },
+      },
+    ],
+  }
+})
+
+watch(networkInterfaces, (interfaces) => {
+  if (!interfaces.some((item) => item.interface === selectedInterface.value)) {
+    selectedInterface.value = interfaces[0]?.interface || ''
   }
 })
 
@@ -168,14 +210,51 @@ usePolling(load)
       <div class="metric-grid">
         <MetricCard label="蜂窝网络" :value="network?.operator_name || sim?.registered_operator_name || '未注册'" :detail="`${display(network?.registration_status)} · ${display(network?.technology_preference)}`" :icon="Signal" :tone="network?.registration_status === 'registered' ? 'success' : 'warning'" />
         <MetricCard label="信号强度" :value="`${network?.signal_strength ?? 0}%`" :detail="sim?.registered_operator_code || '等待网络信息'" :icon="RadioTower" :tone="(network?.signal_strength || 0) > 40 ? 'success' : 'warning'" />
-        <MetricCard label="下载速率" :value="formatRate(primaryInterface?.rx_bytes_per_sec)" :detail="primaryInterface?.interface || '无活动接口'" :icon="ArrowDown" />
-        <MetricCard label="上传速率" :value="formatRate(primaryInterface?.tx_bytes_per_sec)" :detail="primaryInterface?.interface || '无活动接口'" :icon="ArrowUp" tone="success" />
+        <MetricCard label="下载速率" :value="formatRate(selectedInterfaceData?.rx_bytes_per_sec)" :detail="selectedInterfaceData?.interface || '无活动接口'" :icon="ArrowDown" />
+        <MetricCard label="上传速率" :value="formatRate(selectedInterfaceData?.tx_bytes_per_sec)" :detail="selectedInterfaceData?.interface || '无活动接口'" :icon="ArrowUp" tone="success" />
       </div>
 
       <div class="panel-grid">
-        <NCard class="section-card panel--wide" title="实时流量">
-          <template #header-extra><NTag size="small" :bordered="false">最近 30 个采样点</NTag></template>
-          <VChart v-if="Object.keys(speedHistory).length" class="chart" :option="chartOption" autoresize />
+        <NCard class="section-card panel--wide traffic-card" title="实时流量">
+          <template #header-extra>
+            <NTabs
+              v-if="networkInterfaces.length"
+              v-model:value="selectedInterface"
+              class="interface-tabs interface-tabs--header"
+              type="segment"
+              size="small"
+              :pane-style="{ display: 'none' }"
+            >
+              <NTabPane
+                v-for="item in networkInterfaces"
+                :key="item.interface"
+                :name="item.interface"
+                :tab="item.interface"
+              />
+            </NTabs>
+          </template>
+          <div v-if="networkInterfaces.length" class="traffic-panel">
+            <div class="traffic-summary">
+              <div class="traffic-summary__rates">
+                <div class="traffic-rate traffic-rate--download">
+                  <NIcon :size="16"><ArrowDown /></NIcon>
+                  <span>下载</span>
+                  <strong>{{ formatRate(selectedInterfaceData?.rx_bytes_per_sec) }}</strong>
+                </div>
+                <div class="traffic-rate traffic-rate--upload">
+                  <NIcon :size="16"><ArrowUp /></NIcon>
+                  <span>上传</span>
+                  <strong>{{ formatRate(selectedInterfaceData?.tx_bytes_per_sec) }}</strong>
+                </div>
+              </div>
+              <NText depth="3" class="traffic-summary__total">
+                累计下载 {{ formatBytes(selectedInterfaceData?.total_rx_bytes) }} · 上传 {{ formatBytes(selectedInterfaceData?.total_tx_bytes) }}
+              </NText>
+            </div>
+
+            <VChart v-if="hasTrafficHistory" class="chart traffic-chart" :option="chartOption" autoresize />
+            <div v-else class="empty-state traffic-empty"><div><Activity :size="30" />正在采集趋势数据</div></div>
+          </div>
           <div v-else class="empty-state"><div><Activity :size="30" />暂无流量数据</div></div>
         </NCard>
 

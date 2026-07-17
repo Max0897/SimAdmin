@@ -35,7 +35,7 @@ onMounted(() => app.syncDocumentTheme())
     <NGlobalStyle />
     <NLoadingBarProvider>
       <NDialogProvider>
-        <NMessageProvider placement="top-right" :max="4">
+        <NMessageProvider placement="top" :max="4">
           <RouterView />
         </NMessageProvider>
       </NDialogProvider>

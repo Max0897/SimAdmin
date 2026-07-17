@@ -143,6 +143,28 @@ a { color: inherit; text-decoration: none; }
 .action-row__control { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 
 .chart { width: 100%; height: 260px; }
+.traffic-panel { min-width: 0; }
+.traffic-card .n-card-header__extra { min-width: 0; max-width: 70%; }
+.interface-tabs { max-width: 100%; overflow-x: auto; }
+.interface-tabs--header { width: min(320px, 46vw); }
+.interface-tabs .n-tabs-rail { min-width: max-content; }
+.traffic-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  margin-bottom: 4px;
+}
+.traffic-summary__rates { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.traffic-rate { display: flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+.traffic-rate span { color: var(--muted); }
+.traffic-rate strong { color: var(--text); font-size: 13px; font-weight: 620; }
+.traffic-rate--download .n-icon { color: var(--success); }
+.traffic-rate--upload .n-icon { color: var(--accent); }
+.traffic-summary__total { flex: 0 1 auto; font-size: 11px; text-align: right; }
+.traffic-chart { height: 238px; }
+.traffic-empty { min-height: 238px; }
 .table-cell-main { font-weight: 560; }
 .table-cell-sub { margin-top: 2px; color: var(--muted); font-size: 11px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
@@ -215,6 +237,12 @@ a { color: inherit; text-decoration: none; }
   .panel-grid { gap: 8px; }
   .panel-grid > *, .panel-grid > .panel--wide, .panel-grid > .panel--narrow { grid-column: 1 / -1; }
   .description-grid { grid-template-columns: 1fr; }
+  .traffic-card .n-card-header__extra { max-width: calc(100% - 76px); }
+  .interface-tabs--header { width: min(240px, 58vw); }
+  .traffic-summary { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .traffic-summary__total { text-align: left; }
+  .traffic-chart { height: 220px; }
+  .traffic-empty { min-height: 220px; }
   .action-row { align-items: flex-start; flex-direction: column; }
   .action-row__control { width: 100%; justify-content: flex-end; }
   .login-page { padding: 16px; }
