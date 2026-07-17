@@ -70,7 +70,7 @@ const queryPath = (path, params = {}) => {
 }
 
 export const api = {
-  getAuthStatus: () => request('/auth/status', { skipAuthRedirect: true }),
+  getAuthStatus: () => request('/auth/status', { skipAuthRedirect: true, timeoutMs: 5000 }),
   setupAdminPassword: (password) => request('/auth/setup', json('POST', { password }, { skipAuthRedirect: true })),
   login: (password) => request('/auth/login', json('POST', { password }, { skipAuthRedirect: true })),
   changeAdminPassword: (newPassword) => request('/auth/password', json('POST', { new_password: newPassword })),

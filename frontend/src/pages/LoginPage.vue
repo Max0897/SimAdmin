@@ -2,17 +2,16 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  NAlert,
   NButton,
   NForm,
   NFormItem,
-  NIcon,
   NInput,
+  NPopover,
   NProgress,
   NText,
   useMessage,
 } from 'naive-ui'
-import { ArrowRight, LockKeyhole, ShieldCheck } from '@lucide/vue'
+import { ArrowRight } from '@lucide/vue'
 import { api } from '@/api/index.js'
 import { clearAuthCache } from '@/router/index.js'
 
@@ -24,7 +23,6 @@ const loading = ref(false)
 const mode = ref('login')
 const password = ref('')
 const confirmPassword = ref('')
-const error = ref('')
 const settings = ref({ password_min_length: 8 })
 const appVersion = __APP_VERSION__
 const gitCommit = __GIT_COMMIT__
@@ -60,18 +58,17 @@ async function loadStatus() {
 }
 
 async function submit() {
-  error.value = ''
   if (!password.value) {
-    error.value = '请输入管理员密码'
+    message.error('请输入管理员密码')
     return
   }
   if (mode.value === 'setup') {
     if (password.value.length < (settings.value.password_min_length || 8)) {
-      error.value = `密码至少需要 ${settings.value.password_min_length || 8} 个字符`
+      message.error(`密码至少需要 ${settings.value.password_min_length || 8} 个字符`)
       return
     }
     if (password.value !== confirmPassword.value) {
-      error.value = '两次输入的密码不一致'
+      message.error('两次输入的密码不一致')
       return
     }
   }
@@ -84,7 +81,7 @@ async function submit() {
     message.success(mode.value === 'setup' ? '管理员密码已创建' : '登录成功')
     await router.replace(nextPath.value)
   } catch (submitError) {
-    error.value = submitError.message
+    message.error(submitError.message || '登录失败')
   } finally {
     loading.value = false
   }
@@ -95,27 +92,15 @@ onMounted(loadStatus)
 
 <template>
   <main class="login-page">
-    <section class="login-context">
-      <div class="login-context__brand">
+    <section class="login-panel">
+      <header class="login-brand">
         <img src="/simadmin-logo.svg" alt="SimAdmin" />
-        <div><strong>SimAdmin</strong><span>蜂窝设备管理平台</span></div>
-      </div>
-      <div class="login-context__body">
-        <h1>设备状态，<br />一处掌握。</h1>
-        <p>管理蜂窝网络、SIM 与 eSIM、短信、设备网络和系统更新。</p>
-      </div>
-      <div class="login-context__footer">v{{ appVersion }} · {{ gitCommit }}</div>
-    </section>
+        <strong>SimAdmin</strong>
+      </header>
 
-    <section class="login-form-wrap">
       <div class="login-form">
-        <NIcon :size="34" color="var(--accent)"><ShieldCheck v-if="mode === 'setup'" /><LockKeyhole v-else /></NIcon>
-        <h2>{{ mode === 'setup' ? '初始化管理员' : '欢迎回来' }}</h2>
-        <p class="login-form__intro">
-          {{ mode === 'setup' ? '首次使用，请创建管理密码。' : '输入管理密码以访问设备。' }}
-        </p>
-
-        <NAlert v-if="error" type="error" :show-icon="true" style="margin-bottom: 16px">{{ error }}</NAlert>
+        <h1>{{ mode === 'setup' ? '初始化管理员' : '登录' }}</h1>
+        <p class="login-form__intro">{{ mode === 'setup' ? '首次使用，请创建管理密码' : '使用管理员密码继续' }}</p>
         <NForm :show-label="true" @submit.prevent="submit">
           <NFormItem label="管理员密码">
             <NInput
@@ -148,9 +133,17 @@ onMounted(loadStatus)
             <template #icon><ArrowRight :size="18" /></template>
           </NButton>
         </NForm>
-        <NText depth="3" style="display: block; margin-top: 18px; font-size: 12px; text-align: center">
-          忘记密码时可通过设备终端执行 <span class="mono">simadmin auth reset-password</span>
-        </NText>
+
+        <div class="login-help">
+          <NPopover trigger="click" placement="bottom">
+            <template #trigger><NButton text size="small">无法登录？</NButton></template>
+            <div class="login-help__popover">
+              <NText depth="2">通过设备终端重置管理员密码</NText>
+              <code class="login-help__command">simadmin auth reset-password</code>
+            </div>
+          </NPopover>
+          <NText depth="3">v{{ appVersion }} · {{ gitCommit }}</NText>
+        </div>
       </div>
     </section>
   </main>
