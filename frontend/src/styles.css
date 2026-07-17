@@ -167,6 +167,30 @@ a { color: inherit; text-decoration: none; }
 .traffic-empty { min-height: 238px; }
 .sensitive-value { transition: filter .2s ease; }
 .sensitive-value--hidden { filter: blur(5px); user-select: none; }
+.apn-reference-list { display: grid; gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--line); }
+.apn-reference-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--panel-bg); }
+.apn-reference-list strong { font-size: 12px; font-weight: 620; }
+.apn-reference-list span { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; text-align: right; }
+.network-interface-list { display: grid; gap: 12px; }
+.network-interface-card .n-card-header { padding-bottom: 12px; }
+.network-interface-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.network-interface-meta span { color: var(--muted); font-size: 10px; }
+.network-interface-meta strong { margin-left: 5px; color: var(--text); font-size: 11px; font-weight: 580; }
+.network-interface-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, .9fr); gap: 18px; }
+.network-interface-detail > section { min-width: 0; }
+.network-interface-detail h3 { margin: 0 0 9px; color: var(--text); font-size: 12px; font-weight: 620; }
+.interface-address-list { display: grid; gap: 7px; }
+.interface-address-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 5px; }
+.interface-address-row > div { display: flex; flex: 0 0 auto; gap: 5px; }
+.interface-address-row > strong { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.interface-traffic-table { overflow: hidden; border: 1px solid var(--line); border-radius: 5px; }
+.interface-traffic-table > div { display: grid; min-height: 38px; grid-template-columns: 72px minmax(90px, 1fr) minmax(70px, .8fr) 64px; align-items: center; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--line); font-size: 11px; }
+.interface-traffic-table > div:first-child { border-top: 0; }
+.interface-traffic-table > .interface-traffic-table__head { min-height: 30px; color: var(--muted); background: var(--panel-subtle); font-size: 9px; }
+.interface-traffic-table strong { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 10px; font-weight: 560; }
+.interface-direction { display: flex; align-items: center; gap: 5px; font-weight: 620; }
+.interface-direction--rx { color: var(--success); }
+.interface-direction--tx { color: var(--accent); }
 .sim-storage { margin-bottom: 12px; }
 .sim-storage__head { justify-content: space-between; margin-bottom: 7px; font-size: 12px; }
 .sim-cache-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; }
@@ -346,6 +370,9 @@ a { color: inherit; text-decoration: none; }
   .traffic-summary__total { text-align: left; }
   .traffic-chart { height: 220px; }
   .traffic-empty { min-height: 220px; }
+  .network-interface-detail { grid-template-columns: 1fr; }
+  .interface-address-row { align-items: flex-start; flex-direction: column; }
+  .interface-address-row > strong { text-align: left; }
   .sim-cache-form { grid-template-columns: 1fr; }
   .sim-cache-form > .n-button { width: 100%; margin-bottom: 0; }
   .euicc-memory__head { align-items: flex-start; flex-direction: column; gap: 5px; }

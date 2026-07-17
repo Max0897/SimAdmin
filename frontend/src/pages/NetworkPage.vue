@@ -10,20 +10,23 @@ import {
   NInput,
   NInputNumber,
   NModal,
+  NRadioButton,
+  NRadioGroup,
   NSelect,
   NSpace,
+  NSwitch,
   NTabPane,
   NTabs,
   NTag,
   useDialog,
   useMessage,
 } from 'naive-ui'
-import { Copy, LockKeyhole, RadioTower, RotateCcw, Search, Settings2, Unlock } from '@lucide/vue'
+import { ArrowDown, ArrowUp, Copy, LockKeyhole, RadioTower, RefreshCw, RotateCcw, Router, Search, Settings2, Unlock } from '@lucide/vue'
 import { api } from '@/api/index.js'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import { usePolling } from '@/composables/usePolling.js'
-import { display, errorMessage } from '@/utils/format.js'
+import { display, errorMessage, formatBytes } from '@/utils/format.js'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -38,13 +41,18 @@ const bandStatus = ref(null)
 const cellLock = ref(null)
 const apns = ref([])
 const operators = ref([])
+const interfaces = ref([])
 const cellLocation = ref(null)
 const connectivity = ref(null)
+const showDownInterfaces = ref(false)
+const showIpAddresses = ref(false)
 const actionLoading = ref('')
 const apnOpen = ref(false)
-const apnForm = reactive({ context_path: '', apn: '', protocol: 'ipv4v6', username: '', password: '', auth_method: 'none' })
-const cellForm = reactive({ rat: 4, enable: true, lock_type: 1, pci: null, arfcn: null })
+const apnForm = reactive({ context_path: '', apn: '', protocol: 'dual', username: '', password: '', auth_method: 'chap' })
+const cellForm = reactive({ rat: 12, enable: true, lock_type: 1, pci: null, arfcn: null })
 const selectedBands = reactive({ lte_fdd_bands: [], lte_tdd_bands: [], nr_fdd_bands: [], nr_tdd_bands: [] })
+const bandMode = ref('unlocked')
+const bandInitialized = ref(false)
 
 const cellColumns = [
   { title: '角色', key: 'is_serving', width: 90, render: (row) => h(NTag, { size: 'small', type: row.is_serving ? 'success' : 'default' }, { default: () => row.is_serving ? '服务小区' : '邻区' }) },
@@ -58,12 +66,15 @@ const cellColumns = [
   { title: 'Cell ID', key: 'cell_id', minWidth: 120, render: (row) => row.cell_id ?? '--' },
   {
     title: '操作', key: 'action', width: 90,
-    render: (row) => h(NButton, {
-      size: 'small', secondary: true,
-      disabled: cellArfcn(row) === null || row.pci === undefined || row.pci === null,
-      loading: actionLoading.value === `cell-${rowKey(row)}`,
-      onClick: () => lockFromCell(row),
-    }, { default: () => '锁定' }),
+    render: (row) => {
+      const locked = isCellLocked(row)
+      return h(NButton, {
+        size: 'small', secondary: !locked, type: locked ? 'warning' : 'default',
+        disabled: cellArfcn(row) === null || row.pci === undefined || row.pci === null,
+        loading: actionLoading.value === `cell-${rowKey(row)}`,
+        onClick: () => locked ? unlockCells() : lockFromCell(row),
+      }, { default: () => locked ? '解锁' : '锁定' })
+    },
   },
 ]
 const apnColumns = [
@@ -78,7 +89,7 @@ const operatorColumns = [
   { title: '代码', key: 'code', width: 110, render: (row) => `${row.mcc || ''}${row.mnc || ''}` },
   { title: '制式', key: 'technologies', minWidth: 160, render: (row) => row.technologies?.join(' / ') || '--' },
   { title: '状态', key: 'status', width: 110 },
-  { title: '操作', key: 'action', width: 110, render: (row) => h(NButton, { size: 'small', type: 'primary', disabled: row.status === 'current', onClick: () => registerOperator(`${row.mcc}${row.mnc}`) }, { default: () => '注册' }) },
+  { title: '操作', key: 'action', width: 110, render: (row) => h(NButton, { size: 'small', type: 'primary', loading: actionLoading.value === 'register', disabled: ['current', 'forbidden'].includes(row.status), onClick: () => registerOperator(`${row.mcc}${row.mnc}`) }, { default: () => '注册' }) },
 ]
 const bandGroups = computed(() => [
   ['LTE FDD', 'lte_fdd_bands', bandStatus.value?.supported_lte_fdd_bands || []],
@@ -92,6 +103,9 @@ const locationCells = computed(() => {
   if (cellLocation.value?.cell_info) items.push(cellLocation.value.cell_info)
   return [...items, ...(cellLocation.value?.neighbor_cells || [])]
 })
+const filteredInterfaces = computed(() => showDownInterfaces.value
+  ? interfaces.value
+  : interfaces.value.filter((item) => String(item.status).toLowerCase() !== 'down'))
 
 function cellArfcn(row) {
   const value = row?.arfcn ?? row?.earfcn ?? row?.nrarfcn
@@ -103,27 +117,64 @@ function rowKey(row) {
   return `${row.tech || 'cell'}-${cellArfcn(row) ?? 'na'}-${row.pci ?? 'na'}`
 }
 
+function cellRat(row) {
+  return String(row?.tech || row?.type || '').toLowerCase().includes('nr') ? 16 : 12
+}
+
+function isCellLocked(row) {
+  const arfcn = cellArfcn(row)
+  const pci = Number(row?.pci)
+  if (arfcn === null || !Number.isFinite(pci)) return false
+  return (cellLock.value?.rat_status || []).some((status) => status.enabled && status.rat === cellRat(row) && status.arfcn === arfcn && status.pci === pci)
+}
+
+function interfaceStatusType(status) {
+  if (String(status).toLowerCase() === 'up') return 'success'
+  if (String(status).toLowerCase() === 'down') return 'error'
+  return 'warning'
+}
+
+function scopeLabel(scope) {
+  return { public: '公网', private: '内网', loopback: '回环', 'link-local': '链路本地' }[String(scope).toLowerCase()] || scope
+}
+
+function scopeType(scope) {
+  return { public: 'success', private: 'info', 'link-local': 'warning' }[String(scope).toLowerCase()] || 'default'
+}
+
+function bandLabel(group, band) {
+  return group.startsWith('NR') ? `n${band}` : `B${band}`
+}
+
+function applyBandStatus(value, force = false) {
+  bandStatus.value = value
+  if (bandInitialized.value && !force) return
+  bandMode.value = value?.locked ? 'custom' : 'unlocked'
+  Object.keys(selectedBands).forEach((key) => {
+    selectedBands[key] = [...(value?.locked ? value?.[key] || [] : [])]
+  })
+  bandInitialized.value = true
+}
+
 async function load(background = false) {
   if (!background) loading.value = true
   const calls = await Promise.allSettled([
     api.getNetworkInfo(), api.getCellsInfo(), api.getSignalStrength(), api.getRadioMode(),
     api.getBandLockStatus(), api.getCellLockStatus(), api.getApnList(), api.getConnectivity(),
-    api.getCellLocationInfo(), api.getOperators(),
+    api.getCellLocationInfo(), api.getOperators(), api.getNetworkInterfaces(),
   ])
   const assign = (index, setter) => { if (calls[index].status === 'fulfilled') setter(calls[index].value.data) }
   assign(0, (value) => { network.value = value })
   assign(1, (value) => { cells.value = value?.cells || [] })
   assign(2, (value) => { signal.value = value })
   assign(3, (value) => { radioMode.value = value })
-  assign(4, (value) => {
-    bandStatus.value = value
-    Object.keys(selectedBands).forEach((key) => { selectedBands[key] = [...(value?.[key] || [])] })
-  })
+  assign(4, (value) => { applyBandStatus(value) })
   assign(5, (value) => { cellLock.value = value })
   assign(6, (value) => { apns.value = value?.contexts || [] })
   assign(7, (value) => { connectivity.value = value })
   assign(8, (value) => { cellLocation.value = value })
   assign(9, (value) => { if (!operators.value.length) operators.value = value?.operators || [] })
+  assign(10, (value) => { interfaces.value = value?.interfaces || [] })
   const failure = calls.find((result) => result.status === 'rejected')
   if (failure && !network.value && !background) error.value = errorMessage(failure.reason)
   loading.value = false
@@ -135,8 +186,10 @@ async function runAction(name, action, success) {
     await action()
     message.success(success)
     await load(true)
+    return true
   } catch (actionError) {
     message.error(errorMessage(actionError))
+    return false
   } finally {
     actionLoading.value = ''
   }
@@ -148,14 +201,15 @@ function setMode(mode) {
 function editApn(row) {
   Object.assign(apnForm, {
     context_path: row.path,
-    apn: row.apn || '', protocol: row.protocol || 'ipv4v6', username: row.username || '',
-    password: row.password || '', auth_method: row.auth_method || 'none',
+    apn: row.apn || '', protocol: row.protocol || 'dual', username: row.username || '',
+    password: row.password || '', auth_method: row.auth_method || 'chap',
   })
   apnOpen.value = true
 }
 async function saveApn() {
-  await runAction('apn', () => api.setApn({ ...apnForm }), 'APN 已保存')
-  apnOpen.value = false
+  if (!apnForm.apn.trim()) { message.warning('请输入 APN 名称'); return }
+  const saved = await runAction('apn', () => api.setApn({ ...apnForm }), 'APN 已保存')
+  if (saved) apnOpen.value = false
 }
 async function scanOperators() {
   actionLoading.value = 'scan'
@@ -172,17 +226,58 @@ function registerOperator(code) {
 function registerAuto() {
   runAction('register', () => api.registerOperatorAuto(), '已恢复自动注册')
 }
+function changeBandMode(mode) {
+  bandMode.value = mode
+  if (mode !== 'custom' || Object.values(selectedBands).some((items) => items.length)) return
+  Object.keys(selectedBands).forEach((key) => {
+    selectedBands[key] = [...(bandStatus.value?.[`supported_${key}`] || [])]
+  })
+}
 function saveBands() {
-  runAction('bands', () => api.setBandLock({ ...selectedBands }), '频段锁定已更新')
+  if (bandMode.value === 'custom' && !Object.values(selectedBands).some((items) => items.length)) {
+    message.warning('请至少选择一个允许使用的频段')
+    return
+  }
+  const payload = bandMode.value === 'unlocked'
+    ? { lte_fdd_bands: [], lte_tdd_bands: [], nr_fdd_bands: [], nr_tdd_bands: [] }
+    : { ...selectedBands }
+  runAction('bands', () => api.setBandLock(payload), bandMode.value === 'unlocked' ? '频段限制已取消' : '频段锁定已更新')
+}
+async function refreshBands() {
+  actionLoading.value = 'bands-refresh'
+  try {
+    const response = await api.getBandLockStatus()
+    applyBandStatus(response.data, true)
+    message.success('频段配置已刷新')
+  } catch (refreshError) {
+    message.error(errorMessage(refreshError))
+  } finally {
+    actionLoading.value = ''
+  }
+}
+function unlockBands() {
+  dialog.warning({
+    title: '取消频段限制', content: '设备将恢复使用全部支持的频段。', positiveText: '取消限制', negativeText: '返回',
+    async onPositiveClick() {
+      const payload = { lte_fdd_bands: [], lte_tdd_bands: [], nr_fdd_bands: [], nr_tdd_bands: [] }
+      const saved = await runAction('bands', () => api.setBandLock(payload), '频段限制已取消')
+      if (saved) {
+        bandMode.value = 'unlocked'
+        Object.keys(selectedBands).forEach((key) => { selectedBands[key] = [] })
+      }
+      return saved || false
+    },
+  })
 }
 function saveCellLock() {
+  if (cellForm.pci === null || cellForm.arfcn === null) { message.warning('请输入 PCI 和 ARFCN'); return }
   runAction('cell', () => api.setCellLock({ ...cellForm }), '小区锁定已更新')
 }
 function lockFromCell(row) {
   const arfcn = cellArfcn(row)
   const pci = Number(row.pci)
   if (arfcn === null || !Number.isFinite(pci)) return
-  const rat = String(row.tech || '').toLowerCase().includes('nr') ? 6 : 4
+  const rat = cellRat(row)
   runAction(`cell-${rowKey(row)}`, () => api.setCellLock({ rat, enable: true, lock_type: 1, pci, arfcn }), `已锁定 ${row.tech || ''} 小区`)
 }
 function unlockCells() {
@@ -245,15 +340,73 @@ onBeforeUnmount(() => api.stopCellMonitor().catch(() => {}))
         </div>
       </NTabPane>
       <NTabPane name="apn" tab="APN">
-        <NCard class="section-card">
-          <NDataTable :columns="apnColumns" :data="apns" :loading="loading" :scroll-x="680" />
-        </NCard>
+        <div class="panel-grid">
+          <NCard class="section-card panel--wide" title="APN 配置">
+            <NDataTable :columns="apnColumns" :data="apns" :loading="loading" :scroll-x="680" />
+          </NCard>
+          <NCard class="section-card panel--narrow" title="常用运营商 APN">
+            <div class="apn-reference-list">
+              <div><strong>中国移动</strong><span>cmnet</span></div>
+              <div><strong>中国联通</strong><span>3gnet / 3gwap</span></div>
+              <div><strong>中国电信</strong><span>ctnet / ctlte</span></div>
+              <div><strong>中国广电</strong><span>cbnet</span></div>
+            </div>
+          </NCard>
+        </div>
+      </NTabPane>
+      <NTabPane name="interfaces" tab="网络接口">
+        <div class="toolbar">
+          <div class="toolbar__group">
+            <span class="status-line">显示 IP 地址 <NSwitch v-model:value="showIpAddresses" size="small" /></span>
+            <span class="status-line">显示已关闭接口 <NSwitch v-model:value="showDownInterfaces" size="small" /></span>
+          </div>
+          <NTag type="info">{{ filteredInterfaces.length }} / {{ interfaces.length }} 个接口</NTag>
+        </div>
+        <div v-if="filteredInterfaces.length" class="network-interface-list">
+          <NCard v-for="item in filteredInterfaces" :key="item.name" class="network-interface-card">
+            <template #header>
+              <div class="card-title">
+                <Router :size="18" />
+                <strong>{{ item.name }}</strong>
+                <NTag size="small" :type="interfaceStatusType(item.status)">{{ String(item.status).toUpperCase() }}</NTag>
+                <NTag v-if="item.is_default_ipv4" size="small" type="info">IPv4 默认</NTag>
+                <NTag v-if="item.is_default_ipv6" size="small" type="info">IPv6 默认</NTag>
+              </div>
+            </template>
+            <div class="network-interface-meta">
+              <span>MAC <strong>{{ item.mac_address || '--' }}</strong></span>
+              <span>MTU <strong>{{ item.mtu }}</strong></span>
+              <span>类型 <strong>{{ item.is_cellular ? '蜂窝' : item.is_wireless ? '无线' : '有线/虚拟' }}</strong></span>
+            </div>
+            <div class="network-interface-detail">
+              <section>
+                <h3>IP 地址</h3>
+                <div v-if="item.ip_addresses?.length" class="interface-address-list">
+                  <div v-for="(address, index) in item.ip_addresses" :key="`${address.address}-${index}`" class="interface-address-row">
+                    <div><NTag size="small" :type="scopeType(address.scope)">{{ scopeLabel(address.scope) }}</NTag><NTag size="small">{{ String(address.ip_type).toUpperCase() }}</NTag></div>
+                    <strong class="mono sensitive-value" :class="{ 'sensitive-value--hidden': !showIpAddresses }">{{ address.address }}/{{ address.prefix_len }}</strong>
+                  </div>
+                </div>
+                <span v-else class="rule-empty-copy">无 IP 地址</span>
+              </section>
+              <section>
+                <h3>流量统计</h3>
+                <div class="interface-traffic-table">
+                  <div class="interface-traffic-table__head"><span>方向</span><span>字节数</span><span>包数</span><span>错误</span></div>
+                  <div><span class="interface-direction interface-direction--rx"><ArrowDown :size="14" />RX</span><strong>{{ formatBytes(item.rx_bytes) }}</strong><strong>{{ Number(item.rx_packets || 0).toLocaleString() }}</strong><NTag size="small" :type="item.rx_errors ? 'error' : 'default'">{{ item.rx_errors }}</NTag></div>
+                  <div><span class="interface-direction interface-direction--tx"><ArrowUp :size="14" />TX</span><strong>{{ formatBytes(item.tx_bytes) }}</strong><strong>{{ Number(item.tx_packets || 0).toLocaleString() }}</strong><NTag size="small" :type="item.tx_errors ? 'error' : 'default'">{{ item.tx_errors }}</NTag></div>
+                </div>
+              </section>
+            </div>
+          </NCard>
+        </div>
+        <NCard v-else class="section-card"><div class="empty-state">{{ interfaces.length ? '所有接口均已关闭' : '暂无网络接口数据' }}</div></NCard>
       </NTabPane>
       <NTabPane name="operators" tab="运营商">
         <NCard class="section-card">
           <div class="toolbar">
-            <span>扫描附近可注册的运营商</span>
-            <NSpace><NButton secondary @click="registerAuto"><template #icon><RotateCcw :size="16" /></template>自动注册</NButton><NButton type="primary" :loading="actionLoading === 'scan'" @click="scanOperators"><template #icon><Search :size="16" /></template>扫描</NButton></NSpace>
+            <span>扫描通常需要约 2 分钟，期间蜂窝网络可能暂时不可用</span>
+            <NSpace><NButton secondary :loading="actionLoading === 'register'" @click="registerAuto"><template #icon><RotateCcw :size="16" /></template>自动注册</NButton><NButton type="primary" :loading="actionLoading === 'scan'" @click="scanOperators"><template #icon><Search :size="16" /></template>扫描</NButton></NSpace>
           </div>
           <NDataTable :columns="operatorColumns" :data="operators" :scroll-x="700" />
         </NCard>
@@ -264,20 +417,28 @@ onBeforeUnmount(() => api.stopCellMonitor().catch(() => {}))
             <NSelect :value="radioMode?.mode || 'auto'" :options="[{ label: '自动', value: 'auto' }, { label: '仅 LTE', value: 'lte' }, { label: '仅 NR', value: 'nr' }]" :loading="actionLoading === 'mode'" @update:value="setMode" />
           </NCard>
           <NCard class="section-card panel--wide" title="频段锁定">
-            <div class="inline-form">
+            <template #header-extra><NButton quaternary circle aria-label="刷新频段配置" :loading="actionLoading === 'bands-refresh'" @click="refreshBands"><template #icon><RefreshCw :size="16" /></template></NButton></template>
+            <NFormItem label="锁定模式">
+              <NRadioGroup :value="bandMode" @update:value="changeBandMode">
+                <NRadioButton value="unlocked">未锁定（全部频段）</NRadioButton>
+                <NRadioButton value="custom">自定义允许频段</NRadioButton>
+              </NRadioGroup>
+            </NFormItem>
+            <NAlert v-if="bandMode === 'unlocked'" type="success" :show-icon="false" style="margin-bottom: 14px">设备将使用全部支持的频段。</NAlert>
+            <div v-else class="inline-form">
               <NFormItem v-for="[label, key, bands] in bandGroups" :key="key" :label="label">
-                <NSelect v-model:value="selectedBands[key]" multiple filterable :options="bands.map(value => ({ label: `B${value}`, value }))" :placeholder="`选择 ${label} 频段`" />
+                <NSelect v-model:value="selectedBands[key]" multiple filterable :options="bands.map(value => ({ label: bandLabel(label, value), value }))" :placeholder="`选择 ${label} 频段`" />
               </NFormItem>
             </div>
-            <NSpace justify="end"><NButton type="primary" :loading="actionLoading === 'bands'" @click="saveBands"><template #icon><LockKeyhole :size="16" /></template>应用频段</NButton></NSpace>
+            <NSpace justify="end"><NButton secondary :disabled="bandMode === 'unlocked'" @click="unlockBands"><template #icon><Unlock :size="16" /></template>取消限制</NButton><NButton type="primary" :loading="actionLoading === 'bands'" @click="saveBands"><template #icon><LockKeyhole :size="16" /></template>应用</NButton></NSpace>
           </NCard>
         </div>
       </NTabPane>
       <NTabPane name="cell-lock" tab="小区锁定">
         <NCard class="section-card" title="锁定参数">
           <NForm label-placement="top" class="inline-form">
-            <NFormItem label="网络制式"><NSelect v-model:value="cellForm.rat" :options="[{ label: 'LTE', value: 4 }, { label: 'NR5G', value: 6 }]" /></NFormItem>
-            <NFormItem label="锁定类型"><NSelect v-model:value="cellForm.lock_type" :options="[{ label: 'PCI + ARFCN', value: 1 }, { label: '仅 ARFCN', value: 2 }]" /></NFormItem>
+            <NFormItem label="网络制式"><NSelect v-model:value="cellForm.rat" :options="[{ label: 'LTE', value: 12 }, { label: 'NR5G', value: 16 }]" /></NFormItem>
+            <NFormItem label="锁定类型"><NSelect v-model:value="cellForm.lock_type" :options="[{ label: 'PCI + ARFCN', value: 1 }]" /></NFormItem>
             <NFormItem label="PCI"><NInputNumber v-model:value="cellForm.pci" :min="0" style="width: 100%" /></NFormItem>
             <NFormItem label="ARFCN"><NInputNumber v-model:value="cellForm.arfcn" :min="0" style="width: 100%" /></NFormItem>
           </NForm>
@@ -292,7 +453,7 @@ onBeforeUnmount(() => api.stopCellMonitor().catch(() => {}))
     <NModal v-model:show="apnOpen" preset="card" title="编辑 APN" style="width: min(560px, calc(100vw - 24px))">
       <NForm label-placement="top" class="inline-form">
         <NFormItem label="APN" class="full"><NInput v-model:value="apnForm.apn" /></NFormItem>
-        <NFormItem label="协议"><NSelect v-model:value="apnForm.protocol" :options="['ipv4', 'ipv6', 'ipv4v6'].map(value => ({ label: value.toUpperCase(), value }))" /></NFormItem>
+        <NFormItem label="协议"><NSelect v-model:value="apnForm.protocol" :options="[{ label: 'IPv4', value: 'ip' }, { label: 'IPv6', value: 'ipv6' }, { label: 'IPv4v6（双栈）', value: 'dual' }]" /></NFormItem>
         <NFormItem label="认证"><NSelect v-model:value="apnForm.auth_method" :options="['none', 'pap', 'chap'].map(value => ({ label: value.toUpperCase(), value }))" /></NFormItem>
         <NFormItem label="用户名"><NInput v-model:value="apnForm.username" /></NFormItem>
         <NFormItem label="密码"><NInput v-model:value="apnForm.password" type="password" show-password-on="click" /></NFormItem>
