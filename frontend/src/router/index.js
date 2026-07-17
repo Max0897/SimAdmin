@@ -12,6 +12,7 @@ const routes = [
       { path: 'esim', redirect: '/sim?tab=esim' },
       { path: 'network', name: 'network', component: () => import('@/pages/NetworkPage.vue'), meta: { title: '蜂窝网络' } },
       { path: 'device-network', name: 'device-network', component: () => import('@/pages/DeviceNetworkPage.vue'), meta: { title: '设备网络' } },
+      { path: 'leds', name: 'leds', component: () => import('@/pages/LedPage.vue'), meta: { title: 'LED 管理' } },
       { path: 'sms', name: 'sms', component: () => import('@/pages/SmsPage.vue'), meta: { title: '短信管理' } },
       { path: 'notifications', name: 'notifications', component: () => import('@/pages/NotificationsPage.vue'), meta: { title: '通知中心' } },
       { path: 'automation', name: 'automation', component: () => import('@/pages/AutomationPage.vue'), meta: { title: '自动化中心' } },

@@ -27,6 +27,7 @@ import {
   CreditCard,
   Gauge,
   LogOut,
+  Lightbulb,
   Menu,
   MessageSquareText,
   Moon,
@@ -66,10 +67,11 @@ const menuOptions = [
   { label: link('SIM 卡', '/sim'), key: '/sim', icon: icon(CreditCard) },
   { label: link('短信管理', '/sms'), key: '/sms', icon: icon(MessageSquareText) },
   {
-    label: '网络', key: 'network-group', icon: icon(Network),
+    label: '网络与硬件', key: 'network-group', icon: icon(Network),
     children: [
       { label: link('蜂窝网络', '/network'), key: '/network', icon: icon(Signal) },
       { label: link('设备网络', '/device-network'), key: '/device-network', icon: icon(Router) },
+      { label: link('LED 管理', '/leds'), key: '/leds', icon: icon(Lightbulb) },
     ],
   },
   {

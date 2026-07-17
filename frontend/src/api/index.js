@@ -82,6 +82,10 @@ export const api = {
   setWorkMode: (mode) => request('/work-mode', json('POST', { mode, confirm: true }, { timeoutMs: 10_000 })),
 
   getDeviceInfo: () => request('/device'),
+  getLeds: () => request('/leds'),
+  updateLed: (id, policy) => request(`/leds/${encodeURIComponent(id)}`, json('PUT', policy)),
+  testLed: (id, action, durationSeconds = 5) => request(`/leds/${encodeURIComponent(id)}/test`, json('POST', { action, duration_seconds: durationSeconds })),
+  restoreLedDefaults: () => request('/leds/restore-defaults', json('POST', {})),
   getSimInfo: () => request('/sim', { timeoutMs: 2500 }),
   refreshSimDetails: () => request('/sim/details/refresh', json('POST', {}, { timeoutMs: 2500 })),
   updateSimCache: (data) => request('/sim/cache', json('POST', data)),

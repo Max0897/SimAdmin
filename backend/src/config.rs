@@ -1673,6 +1673,54 @@ impl Default for EsimConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LedMode {
+    #[default]
+    Auto,
+    On,
+    Off,
+    Blink,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LedPolicy {
+    #[serde(default)]
+    pub mode: LedMode,
+    #[serde(default = "default_led_blink_on_ms")]
+    pub blink_on_ms: u32,
+    #[serde(default = "default_led_blink_off_ms")]
+    pub blink_off_ms: u32,
+}
+
+impl Default for LedPolicy {
+    fn default() -> Self {
+        Self {
+            mode: LedMode::Auto,
+            blink_on_ms: default_led_blink_on_ms(),
+            blink_off_ms: default_led_blink_off_ms(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LedConfig {
+    #[serde(default)]
+    pub wifi: LedPolicy,
+    #[serde(default)]
+    pub internet: LedPolicy,
+    #[serde(default)]
+    pub system: LedPolicy,
+}
+
+fn default_led_blink_on_ms() -> u32 {
+    500
+}
+
+fn default_led_blink_off_ms() -> u32 {
+    500
+}
+
 /// 应用配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -1699,6 +1747,8 @@ pub struct AppConfig {
     pub esim: EsimConfig,
     #[serde(default)]
     pub automation: AutomationConfig,
+    #[serde(default)]
+    pub led: LedConfig,
 }
 
 impl Default for AppConfig {
@@ -1715,6 +1765,7 @@ impl Default for AppConfig {
             work_mode: WorkMode::default(),
             esim: EsimConfig::default(),
             automation: AutomationConfig::default(),
+            led: LedConfig::default(),
         }
     }
 }
@@ -1904,6 +1955,18 @@ impl ConfigManager {
     /// 获取自动化配置
     pub fn get_automation_config(&self) -> AutomationConfig {
         self.config.read().unwrap().automation.clone()
+    }
+
+    pub fn get_led_config(&self) -> LedConfig {
+        self.config.read().unwrap().led.clone()
+    }
+
+    pub fn set_led_config(&self, led: LedConfig) -> Result<(), String> {
+        {
+            let mut config = self.config.write().unwrap();
+            config.led = led;
+        }
+        self.save()
     }
 
     /// 更新自动化配置

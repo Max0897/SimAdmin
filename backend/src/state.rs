@@ -14,6 +14,7 @@ use crate::config::ConfigManager;
 use crate::db::Database;
 use crate::device_network::DdnsManager;
 use crate::esim::EsimSupervisor;
+use crate::led::LedController;
 use crate::notification::NotificationSender;
 use crate::sms_listener::SmsResyncHandle;
 use crate::system_event::SystemEventEmitter;
@@ -36,6 +37,7 @@ pub struct AppState {
     pub database: Arc<Database>,
     /// 配置管理器（用于管理通知等配置）
     pub config_manager: Arc<ConfigManager>,
+    pub led_controller: Arc<LedController>,
     /// 通知发送器（用于转发 SMS、通话和 DDNS 通知）
     pub notification_sender: Arc<NotificationSender>,
     pub system_event_emitter: Arc<SystemEventEmitter>,
@@ -59,6 +61,7 @@ impl AppState {
         dbus_conn: Arc<Connection>,
         database: Arc<Database>,
         config_manager: Arc<ConfigManager>,
+        led_controller: Arc<LedController>,
         notification_sender: Arc<NotificationSender>,
         system_event_emitter: Arc<SystemEventEmitter>,
         ddns_manager: Arc<DdnsManager>,
@@ -72,6 +75,7 @@ impl AppState {
             dbus_conn,
             database,
             config_manager,
+            led_controller,
             notification_sender,
             system_event_emitter,
             ddns_manager,
@@ -105,6 +109,12 @@ impl FromRef<AppState> for Arc<Database> {
 impl FromRef<AppState> for Arc<ConfigManager> {
     fn from_ref(state: &AppState) -> Self {
         state.config_manager.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<LedController> {
+    fn from_ref(state: &AppState) -> Self {
+        state.led_controller.clone()
     }
 }
 

@@ -34,6 +34,7 @@ mod device_status;
 mod esim;
 mod handlers;
 mod iptables;
+mod led;
 mod models;
 mod modem_manager;
 mod notification;
@@ -323,6 +324,11 @@ async fn main() -> Result<()> {
     let config_path = get_default_config_path();
     info!(path = ?config_path, "Loading config");
     let config_manager = Arc::new(ConfigManager::new(config_path));
+    let led_controller = Arc::new(led::LedController::new(Arc::clone(&config_manager)));
+    if let Err(error) = led_controller.apply_all() {
+        warn!(error = %error, "Failed to apply configured LED policies at startup");
+    }
+    led::spawn_internet_led_monitor(Arc::clone(&led_controller), Arc::clone(&dbus_conn));
     let data_user_disabled = Arc::new(AtomicBool::new(!config_manager.get_data_enabled()));
     let airplane_mode_requested = Arc::new(AtomicBool::new(false));
     let cell_monitoring_active = Arc::new(AtomicBool::new(false));
@@ -487,6 +493,7 @@ async fn main() -> Result<()> {
         dbus_conn,
         app_db,
         config_manager,
+        led_controller,
         notification_sender,
         system_event_emitter,
         ddns_manager,
@@ -504,6 +511,22 @@ async fn main() -> Result<()> {
     let protected_routes = Router::new()
         // ========== 设备信息接口 ==========
         .route("/api/device", get(get_device_info).options(options_handler))
+        .route(
+            "/api/leds",
+            get(led::get_leds_handler).options(options_handler),
+        )
+        .route(
+            "/api/leds/restore-defaults",
+            post(led::restore_led_defaults_handler).options(options_handler),
+        )
+        .route(
+            "/api/leds/{id}",
+            axum::routing::put(led::update_led_handler).options(options_handler),
+        )
+        .route(
+            "/api/leds/{id}/test",
+            post(led::test_led_handler).options(options_handler),
+        )
         // ========== SIM 卡接口 ==========
         .route("/api/sim", get(get_sim_info).options(options_handler))
         .route(
