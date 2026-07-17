@@ -166,7 +166,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="page page--narrow">
+  <main class="page">
     <PageHeader title="LED 管理" :loading="loading" @refresh="load(false)">
       <template #actions>
         <NButton secondary :loading="restoring" :disabled="loading || Boolean(saving)" @click="restoreDefaults">
