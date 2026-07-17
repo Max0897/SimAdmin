@@ -12,7 +12,6 @@ import {
   NPopconfirm,
   NSpace,
   NTag,
-  NText,
   useMessage,
 } from 'naive-ui'
 import { ArrowLeft, Eraser, MessageSquare, Plus, Search, Send, Trash2, UserRound } from '@lucide/vue'
@@ -141,8 +140,9 @@ usePolling(load)
         >
           <NAvatar round><UserRound :size="18" /></NAvatar>
           <div class="conversation-item__body">
-            <div class="conversation-item__head"><strong>{{ conversation.phone }}</strong><NText depth="3">{{ conversation.latest.timestamp }}</NText></div>
+            <div class="conversation-item__head"><strong>{{ conversation.phone }}</strong></div>
             <div class="conversation-item__preview">{{ conversation.latest.content }}</div>
+            <div class="conversation-item__time">{{ conversation.latest.timestamp }}</div>
           </div>
           <NBadge :value="conversation.messages.length" :max="99" />
         </div>

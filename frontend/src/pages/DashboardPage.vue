@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import {
   NAlert,
+  NButton,
   NCard,
   NIcon,
   NProgress,
@@ -12,6 +13,7 @@ import {
   NTag,
   NTabs,
   NText,
+  NTooltip,
   useMessage,
 } from 'naive-ui'
 import {
@@ -20,6 +22,8 @@ import {
   ArrowUp,
   Cpu,
   CreditCard,
+  Eye,
+  EyeOff,
   HardDrive,
   MemoryStick,
   RadioTower,
@@ -56,6 +60,7 @@ const addresses = ref({ ipv4: [], ipv6: [] })
 const speedHistory = ref({})
 const switchLoading = ref('')
 const selectedInterface = ref('wlan0')
+const showSimDetails = ref(false)
 
 const networkInterfaces = computed(() => {
   const interfaces = [...(stats.value?.network_speed?.interfaces || [])]
@@ -286,12 +291,24 @@ usePolling(load)
         </NCard>
 
         <NCard class="section-card" title="SIM 状态">
-          <template #header-extra><NIcon :size="19"><CreditCard /></NIcon></template>
+          <template #header-extra>
+            <NSpace :size="4" align="center">
+              <NIcon :size="19"><CreditCard /></NIcon>
+              <NTooltip>
+                <template #trigger>
+                  <NButton quaternary circle size="small" :aria-label="showSimDetails ? '隐藏 SIM 信息' : '显示 SIM 信息'" @click="showSimDetails = !showSimDetails">
+                    <template #icon><EyeOff v-if="showSimDetails" :size="16" /><Eye v-else :size="16" /></template>
+                  </NButton>
+                </template>
+                {{ showSimDetails ? '隐藏 SIM 信息' : '显示 SIM 信息' }}
+              </NTooltip>
+            </NSpace>
+          </template>
           <div class="description-grid">
             <div class="description-item"><span>状态</span><strong>{{ sim?.present ? '已插入' : '未检测到' }}</strong></div>
             <div class="description-item"><span>类型</span><strong>{{ display(sim?.sim_type) }}</strong></div>
-            <div class="description-item"><span>号码</span><strong>{{ sim?.phone_numbers?.join(' / ') || '--' }}</strong></div>
-            <div class="description-item"><span>ICCID</span><strong class="mono">{{ display(sim?.iccid) }}</strong></div>
+            <div class="description-item"><span>号码</span><strong class="sensitive-value" :class="{ 'sensitive-value--hidden': !showSimDetails }">{{ sim?.phone_numbers?.join(' / ') || '--' }}</strong></div>
+            <div class="description-item"><span>ICCID</span><strong class="mono sensitive-value" :class="{ 'sensitive-value--hidden': !showSimDetails }">{{ display(sim?.iccid) }}</strong></div>
           </div>
         </NCard>
 
