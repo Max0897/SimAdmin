@@ -34,7 +34,9 @@ import {
   RefreshCw,
   Trash2,
   Wrench,
+  QrCode,
 } from '@lucide/vue'
+import jsQR from 'jsqr'
 import { api } from '@/api/index.js'
 import PageHeader from '@/components/PageHeader.vue'
 import { useAppStore } from '@/stores/app.js'
@@ -74,6 +76,8 @@ const memorySaving = ref(false)
 const downloadOpen = ref(false)
 const downloadMode = ref('code')
 const activationCode = ref('')
+const qrInput = ref(null)
+const qrLoading = ref(false)
 const downloadStatus = ref('idle')
 const downloadProgress = ref(0)
 const downloadLogs = ref([])
@@ -531,6 +535,46 @@ function parseActivationCode(notify = true) {
   return true
 }
 
+function readImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('无法读取二维码图片'))
+    reader.onload = () => {
+      const image = new Image()
+      image.onerror = () => reject(new Error('无法加载二维码图片'))
+      image.onload = () => resolve(image)
+      image.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+async function decodeQrImage(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  qrLoading.value = true
+  try {
+    const image = await readImage(file)
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth || image.width
+    canvas.height = image.naturalHeight || image.height
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new Error('浏览器无法解析图片')
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+    const result = jsQR(imageData.data, imageData.width, imageData.height)
+    if (!result?.data) throw new Error('未在图片中检测到有效二维码')
+    activationCode.value = result.data.trim()
+    if (!parseActivationCode(false)) throw new Error('二维码不是有效的 eSIM LPA 激活码')
+    message.success('二维码已识别并填充激活参数')
+  } catch (qrError) {
+    message.error(errorMessage(qrError))
+  } finally {
+    qrLoading.value = false
+    event.target.value = ''
+  }
+}
+
 function addDownloadLog(text, type = 'info') {
   const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   downloadLogs.value.push({ timestamp, text, type })
@@ -870,10 +914,14 @@ onBeforeUnmount(() => {
     >
       <NTabs v-model:value="downloadMode" type="segment" size="small">
         <NTabPane name="code" tab="LPA 激活码">
+          <input ref="qrInput" hidden type="file" accept="image/*" @change="decodeQrImage" />
           <NFormItem label="激活码">
             <NInput v-model:value="activationCode" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="LPA:1$..." :disabled="downloadStatus === 'writing'" />
           </NFormItem>
-          <NButton secondary :disabled="downloadStatus === 'writing'" @click="parseActivationCode(true)">解析激活码</NButton>
+          <NSpace>
+            <NButton secondary :disabled="downloadStatus === 'writing'" @click="parseActivationCode(true)">解析激活码</NButton>
+            <NButton secondary :loading="qrLoading" :disabled="downloadStatus === 'writing'" @click="qrInput.click()"><template #icon><QrCode :size="16" /></template>识别二维码图片</NButton>
+          </NSpace>
           <div v-if="downloadForm.smdp && downloadForm.matching_id" class="activation-result">
             <div><span>SM-DP+</span><strong class="mono">{{ downloadForm.smdp }}</strong></div>
             <div><span>Matching ID</span><strong class="mono">{{ downloadForm.matching_id }}</strong></div>

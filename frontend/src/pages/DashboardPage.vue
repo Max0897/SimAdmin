@@ -51,6 +51,7 @@ const error = ref('')
 const device = ref(null)
 const sim = ref(null)
 const network = ref(null)
+const cells = ref(null)
 const stats = ref(null)
 const dataStatus = ref(false)
 const airplane = ref(null)
@@ -61,6 +62,7 @@ const speedHistory = ref({})
 const switchLoading = ref('')
 const selectedInterface = ref('wlan0')
 const showSimDetails = ref(false)
+const showCellDetails = ref(false)
 
 const networkInterfaces = computed(() => {
   const interfaces = [...(stats.value?.network_speed?.interfaces || [])]
@@ -82,6 +84,8 @@ const hasTrafficHistory = computed(() => (
   Math.max(selectedHistory.value.rx.length, selectedHistory.value.tx.length) > 1
 ))
 const temperatures = computed(() => stats.value?.temperature || [])
+const cellRows = computed(() => cells.value?.cells || [])
+const servingCell = computed(() => cells.value?.serving_cell || cellRows.value.find((item) => item.is_serving) || null)
 const chartOption = computed(() => {
   const history = selectedHistory.value
   const sampleCount = Math.max(history.rx.length, history.tx.length)
@@ -145,6 +149,7 @@ async function load(background = false) {
     ['device', api.getDeviceInfo()],
     ['sim', api.getSimInfo()],
     ['network', api.getNetworkInfo()],
+    ['cells', api.getCellsInfo()],
     ['stats', api.getSystemStats()],
     ['data', api.getDataStatus()],
     ['airplane', api.getAirplaneMode()],
@@ -164,6 +169,7 @@ async function load(background = false) {
     if (key === 'device') device.value = value
     if (key === 'sim') sim.value = value
     if (key === 'network') network.value = value
+    if (key === 'cells') cells.value = value
     if (key === 'stats') {
       stats.value = value
       updateHistory(value?.network_speed?.interfaces)
@@ -312,6 +318,34 @@ usePolling(load)
           </div>
         </NCard>
 
+        <NCard class="section-card panel--full" title="小区信息">
+          <template #header-extra>
+            <NSpace :size="6" align="center">
+              <NTag size="small" :type="cellRows.length ? 'success' : 'default'">{{ cellRows.length }} 个小区</NTag>
+              <NTooltip>
+                <template #trigger><NButton quaternary circle size="small" :aria-label="showCellDetails ? '隐藏小区标识' : '显示小区标识'" @click="showCellDetails = !showCellDetails"><template #icon><EyeOff v-if="showCellDetails" :size="16" /><Eye v-else :size="16" /></template></NButton></template>
+                {{ showCellDetails ? '隐藏小区标识' : '显示小区标识' }}
+              </NTooltip>
+            </NSpace>
+          </template>
+          <div v-if="servingCell" class="description-grid" style="margin-bottom: 14px">
+            <div class="description-item"><span>服务制式</span><strong>{{ display(servingCell.tech) }}</strong></div>
+            <div class="description-item"><span>频段</span><strong>{{ display(servingCell.band) }}</strong></div>
+            <div class="description-item"><span>Cell ID</span><strong class="mono sensitive-value" :class="{ 'sensitive-value--hidden': !showCellDetails }">{{ servingCell.cell_id ?? '--' }}</strong></div>
+            <div class="description-item"><span>TAC</span><strong class="mono sensitive-value" :class="{ 'sensitive-value--hidden': !showCellDetails }">{{ servingCell.tac ?? '--' }}</strong></div>
+          </div>
+          <div v-if="cellRows.length" class="compact-table">
+            <div class="compact-table__head"><span>角色</span><span>频段</span><span>ARFCN / PCI</span><span>RSRP / RSRQ / SINR</span></div>
+            <div v-for="(cell, index) in cellRows" :key="`${cell.arfcn}-${cell.pci}-${index}`" class="compact-table__row">
+              <span><small>角色</small><NTag size="small" :type="cell.is_serving ? 'success' : 'default'">{{ cell.is_serving ? '服务小区' : '邻区' }}</NTag></span>
+              <strong><small>频段</small>{{ cell.band || '--' }}</strong>
+              <span class="mono"><small>ARFCN / PCI</small>{{ cell.arfcn ?? '--' }} / {{ cell.pci ?? '--' }}</span>
+              <span class="mono"><small>RSRP / RSRQ / SINR</small>{{ cell.rsrp ?? '--' }} / {{ cell.rsrq ?? '--' }} / {{ cell.sinr ?? '--' }}</span>
+            </div>
+          </div>
+          <div v-else class="empty-state"><div><RadioTower :size="30" />暂无小区数据</div></div>
+        </NCard>
+
         <NCard class="section-card panel--full" title="系统资源">
           <div class="metric-grid" style="margin: 0">
             <MetricCard label="CPU 负载" :value="`${Math.round(stats?.cpu_load?.load_percent || 0)}%`" :detail="`${stats?.cpu_load?.core_count || 0} 核 · ${stats?.cpu_load?.load_1min || 0} / ${stats?.cpu_load?.load_5min || 0}`" :icon="Cpu" />
@@ -328,6 +362,13 @@ usePolling(load)
               <NProgress type="line" :percentage="Math.round(disk.used_percent)" :status="disk.used_percent > 85 ? 'error' : 'success'" :height="7" />
             </div>
           </NSpace>
+          <div v-if="temperatures.length" class="temperature-list">
+            <div v-for="(sensor, index) in temperatures" :key="`${sensor.type}-${index}`" class="temperature-row">
+              <span>{{ sensor.label || sensor.type }}</span>
+              <NProgress type="line" :percentage="Math.max(0, Math.min(100, Math.round(sensor.temperature)))" :show-indicator="false" :status="sensor.temperature >= 80 ? 'error' : sensor.temperature >= 65 ? 'warning' : 'success'" :height="6" />
+              <strong class="mono">{{ Number(sensor.temperature).toFixed(1) }}°C</strong>
+            </div>
+          </div>
         </NCard>
 
         <NCard class="section-card panel--full" title="连接状态">

@@ -31,6 +31,7 @@ import {
   MessageSquareText,
   Moon,
   Network,
+  PhoneCall,
   RefreshCw,
   Router,
   Settings,
@@ -76,6 +77,7 @@ const menuOptions = [
     children: [
       { label: link('自动化中心', '/automation'), key: '/automation', icon: icon(Bot) },
       { label: link('通知中心', '/notifications'), key: '/notifications', icon: icon(Bell) },
+      { label: link('电话管理', '/phone'), key: '/phone', icon: icon(PhoneCall) },
     ],
   },
   {

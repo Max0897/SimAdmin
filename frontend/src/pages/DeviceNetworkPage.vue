@@ -19,7 +19,7 @@ import {
   useDialog,
   useMessage,
 } from 'naive-ui'
-import { Cable, Eraser, Play, RefreshCw, Router, Save, Wifi, WifiOff } from '@lucide/vue'
+import { Cable, Eraser, Pencil, Play, RefreshCw, Router, Save, Wifi, WifiOff } from '@lucide/vue'
 import { api } from '@/api/index.js'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
@@ -33,6 +33,7 @@ const actionLoading = ref('')
 const error = ref('')
 const interfaces = ref([])
 const wlan = ref(null)
+const dataActive = ref(false)
 const networks = ref([])
 const profiles = ref([])
 const ddnsStatus = ref(null)
@@ -46,6 +47,10 @@ const domainText = reactive({ ipv4: '', ipv6: '' })
 const urlText = reactive({ ipv4: '', ipv6: '' })
 const connectOpen = ref(false)
 const connectForm = reactive({ ssid: '', password: '', auto_join: true })
+const profileOpen = ref(false)
+const profileForm = reactive({ connection_id: '', auto_join: true, ipv4_mode: 'auto', ipv4_address: '', ipv4_prefix: 24, ipv4_gateway: '' })
+const wlanDisableOpen = ref(false)
+const wlanDisableText = ref('')
 
 const interfaceColumns = [
   {
@@ -78,7 +83,7 @@ async function load() {
   loading.value = true
   const results = await Promise.allSettled([
     api.getNetworkInterfaces(), api.getWlanStatus(), api.getWlanProfiles(),
-    api.getDdnsConfig(), api.getDdnsStatus(), api.getDdnsLogs(),
+    api.getDdnsConfig(), api.getDdnsStatus(), api.getDdnsLogs(), api.getDataStatus(),
   ])
   if (results[0].status === 'fulfilled') interfaces.value = results[0].value.data?.interfaces || []
   if (results[1].status === 'fulfilled') wlan.value = results[1].value.data
@@ -92,6 +97,7 @@ async function load() {
   }
   if (results[4].status === 'fulfilled') ddnsStatus.value = results[4].value.data
   if (results[5].status === 'fulfilled') ddnsLogs.value = results[5].value.data?.entries || []
+  if (results[6].status === 'fulfilled') dataActive.value = Boolean(results[6].value.data?.active)
   const failure = results.find((item) => item.status === 'rejected')
   if (failure && !interfaces.value.length) error.value = errorMessage(failure.reason)
   loading.value = false
@@ -130,11 +136,57 @@ async function connectWifi() {
 function disconnectWifi() {
   runAction('disconnect', () => api.disconnectWlan(), 'Wi-Fi 已断开')
 }
-function toggleWifi(value) {
-  runAction('wifi', () => api.setWlanEnabled(value), value ? 'Wi-Fi 已启用' : 'Wi-Fi 已关闭')
+function requestToggleWifi(value) {
+  if (value) {
+    runAction('wifi', () => api.setWlanEnabled(true), 'Wi-Fi 已启用')
+    return
+  }
+  wlanDisableText.value = ''
+  wlanDisableOpen.value = true
+}
+async function confirmDisableWifi() {
+  if (wlanDisableText.value !== '确认关闭 WLAN') return
+  await runAction('wifi', () => api.setWlanEnabled(false), 'Wi-Fi 已关闭')
+  wlanDisableOpen.value = false
+  networks.value = []
 }
 function forgetProfile(profile) {
-  dialog.warning({ title: '忘记网络', content: `删除已保存的网络 ${profile.ssid}？`, positiveText: '删除', negativeText: '取消', onPositiveClick: () => runAction('forget', () => api.forgetWlan({ uuid: profile.uuid }), '网络配置已删除') })
+  dialog.warning({ title: '忘记网络', content: `删除已保存的网络 ${profile.ssid}？`, positiveText: '删除', negativeText: '取消', onPositiveClick: () => runAction('forget', () => api.forgetWlan({ uuid: profile.uuid, connection_id: profile.id }), '网络配置已删除') })
+}
+function connectSavedProfile(profile) {
+  runAction('connect-saved', () => api.connectWlan({ ssid: profile.ssid || profile.id, auto_join: profile.auto_join }), `已连接 ${profile.ssid || profile.id}`)
+}
+function openProfileEditor(profile) {
+  const address = wlan.value?.ipv4_addresses?.[0] || ''
+  const [ipv4Address, prefix] = address.split('/')
+  Object.assign(profileForm, {
+    connection_id: profile?.id || wlan.value?.connection_id || '',
+    auto_join: profile?.auto_join ?? true,
+    ipv4_mode: 'auto',
+    ipv4_address: ipv4Address || '',
+    ipv4_prefix: Number(prefix) || 24,
+    ipv4_gateway: wlan.value?.ipv4_gateway || '',
+  })
+  profileOpen.value = true
+}
+async function saveProfile() {
+  if (!profileForm.connection_id) return
+  if (profileForm.ipv4_mode === 'manual' && (!profileForm.ipv4_address || !profileForm.ipv4_gateway)) {
+    message.warning('手动 IPv4 模式需要填写地址和网关')
+    return
+  }
+  const payload = {
+    connection_id: profileForm.connection_id,
+    auto_join: profileForm.auto_join,
+    ipv4_mode: profileForm.ipv4_mode,
+    ...(profileForm.ipv4_mode === 'manual' ? {
+      ipv4_address: profileForm.ipv4_address,
+      ipv4_prefix: profileForm.ipv4_prefix,
+      ipv4_gateway: profileForm.ipv4_gateway,
+    } : {}),
+  }
+  await runAction('profile-save', () => api.saveWlanProfile(payload), 'WLAN 配置已保存')
+  profileOpen.value = false
 }
 function lines(value) { return value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean) }
 function saveDdns() {
@@ -169,10 +221,10 @@ load()
       <NTabPane name="wlan" tab="WLAN">
         <div class="panel-grid">
           <NCard class="section-card panel--full" title="无线客户端">
-            <template #header-extra><NSwitch :value="wlan?.enabled" :loading="actionLoading === 'wifi'" @update:value="toggleWifi" /></template>
+            <template #header-extra><NSwitch :value="wlan?.enabled" :loading="actionLoading === 'wifi'" @update:value="requestToggleWifi" /></template>
             <div class="toolbar">
               <div class="status-line"><span class="status-dot" :class="{ 'status-dot--online': wlan?.connected }" />{{ wlan?.connected ? `已连接 ${wlan.ssid}` : '未连接' }}</div>
-              <NSpace><NButton v-if="wlan?.connected" secondary @click="disconnectWifi"><template #icon><WifiOff :size="16" /></template>断开</NButton><NButton type="primary" :loading="actionLoading === 'scan'" @click="scanWifi"><template #icon><RefreshCw :size="16" /></template>扫描网络</NButton></NSpace>
+              <NSpace><NButton v-if="wlan?.connected" secondary @click="openProfileEditor(profiles.find(profile => profile.active))"><template #icon><Pencil :size="16" /></template>属性</NButton><NButton v-if="wlan?.connected" secondary @click="disconnectWifi"><template #icon><WifiOff :size="16" /></template>断开</NButton><NButton type="primary" :loading="actionLoading === 'scan'" @click="scanWifi"><template #icon><RefreshCw :size="16" /></template>扫描网络</NButton></NSpace>
             </div>
             <NDataTable :columns="networkColumns" :data="networks" :scroll-x="720" />
           </NCard>
@@ -180,7 +232,7 @@ load()
             <div class="action-list">
               <div v-for="profile in profiles" :key="profile.uuid" class="action-row">
                 <div class="action-row__copy"><strong>{{ profile.ssid }}</strong><span>{{ profile.auto_join ? '自动连接' : '手动连接' }} · {{ profile.interface_name || '任意接口' }}</span></div>
-                <div class="action-row__control"><NTag v-if="profile.active" type="success">活动</NTag><NButton quaternary type="error" circle aria-label="忘记网络" @click="forgetProfile(profile)"><template #icon><Eraser :size="17" /></template></NButton></div>
+                <div class="action-row__control"><NTag v-if="profile.active" type="success">活动</NTag><NButton v-if="!profile.active" size="small" secondary :loading="actionLoading === 'connect-saved'" @click="connectSavedProfile(profile)">连接</NButton><NButton quaternary circle aria-label="编辑网络属性" @click="openProfileEditor(profile)"><template #icon><Pencil :size="17" /></template></NButton><NButton quaternary type="error" circle aria-label="忘记网络" @click="forgetProfile(profile)"><template #icon><Eraser :size="17" /></template></NButton></div>
               </div>
               <div v-if="!profiles.length" class="empty-state">暂无已保存网络</div>
             </div>
@@ -228,6 +280,30 @@ load()
         <NFormItem label="自动连接"><NSwitch v-model:value="connectForm.auto_join" /></NFormItem>
         <NSpace justify="end"><NButton @click="connectOpen = false">取消</NButton><NButton type="primary" :loading="actionLoading === 'connect'" @click="connectWifi">连接</NButton></NSpace>
       </NForm>
+    </NModal>
+
+    <NModal v-model:show="profileOpen" preset="card" title="WLAN 属性" style="width: min(520px, calc(100vw - 24px))">
+      <NForm label-placement="top">
+        <NFormItem label="连接配置"><NInput v-model:value="profileForm.connection_id" disabled /></NFormItem>
+        <NFormItem label="自动加入"><NSwitch v-model:value="profileForm.auto_join" /></NFormItem>
+        <NFormItem label="IPv4 配置"><NSelect v-model:value="profileForm.ipv4_mode" :options="[{ label: '自动（DHCP）', value: 'auto' }, { label: '手动', value: 'manual' }]" /></NFormItem>
+        <template v-if="profileForm.ipv4_mode === 'manual'">
+          <div class="inline-form">
+            <NFormItem label="IP 地址"><NInput v-model:value="profileForm.ipv4_address" placeholder="192.168.1.10" /></NFormItem>
+            <NFormItem label="前缀长度"><NInputNumber v-model:value="profileForm.ipv4_prefix" :min="1" :max="32" style="width: 100%" /></NFormItem>
+            <NFormItem label="网关" class="full"><NInput v-model:value="profileForm.ipv4_gateway" placeholder="192.168.1.1" /></NFormItem>
+          </div>
+        </template>
+        <NSpace justify="end"><NButton @click="profileOpen = false">取消</NButton><NButton type="primary" :loading="actionLoading === 'profile-save'" @click="saveProfile"><template #icon><Save :size="16" /></template>保存</NButton></NSpace>
+      </NForm>
+    </NModal>
+
+    <NModal v-model:show="wlanDisableOpen" preset="card" title="关闭 WLAN" style="width: min(500px, calc(100vw - 24px))">
+      <NAlert :type="dataActive ? 'warning' : 'error'" style="margin-bottom: 14px">
+        {{ dataActive ? '蜂窝数据已开启，关闭 WLAN 后仍可通过蜂窝网络管理设备。' : '蜂窝数据未开启，关闭 WLAN 后可能无法远程访问设备。' }}
+      </NAlert>
+      <NFormItem label="输入“确认关闭 WLAN”继续"><NInput v-model:value="wlanDisableText" :disabled="actionLoading === 'wifi'" /></NFormItem>
+      <NSpace justify="end"><NButton :disabled="actionLoading === 'wifi'" @click="wlanDisableOpen = false">取消</NButton><NButton type="error" :loading="actionLoading === 'wifi'" :disabled="wlanDisableText !== '确认关闭 WLAN'" @click="confirmDisableWifi">确认关闭</NButton></NSpace>
     </NModal>
   </main>
 </template>

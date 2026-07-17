@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
   NAlert,
   NButton,
@@ -18,7 +18,7 @@ import {
   useDialog,
   useMessage,
 } from 'naive-ui'
-import { LockKeyhole, RadioTower, RotateCcw, Search, Settings2, Unlock } from '@lucide/vue'
+import { Copy, LockKeyhole, RadioTower, RotateCcw, Search, Settings2, Unlock } from '@lucide/vue'
 import { api } from '@/api/index.js'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
@@ -38,6 +38,7 @@ const bandStatus = ref(null)
 const cellLock = ref(null)
 const apns = ref([])
 const operators = ref([])
+const cellLocation = ref(null)
 const connectivity = ref(null)
 const actionLoading = ref('')
 const apnOpen = ref(false)
@@ -55,6 +56,15 @@ const cellColumns = [
   { title: 'RSRQ', key: 'rsrq', minWidth: 100 },
   { title: 'SINR', key: 'sinr', minWidth: 100 },
   { title: 'Cell ID', key: 'cell_id', minWidth: 120, render: (row) => row.cell_id ?? '--' },
+  {
+    title: '操作', key: 'action', width: 90,
+    render: (row) => h(NButton, {
+      size: 'small', secondary: true,
+      disabled: cellArfcn(row) === null || row.pci === undefined || row.pci === null,
+      loading: actionLoading.value === `cell-${rowKey(row)}`,
+      onClick: () => lockFromCell(row),
+    }, { default: () => '锁定' }),
+  },
 ]
 const apnColumns = [
   { title: '名称', key: 'name', minWidth: 130 },
@@ -76,12 +86,29 @@ const bandGroups = computed(() => [
   ['NR FDD', 'nr_fdd_bands', bandStatus.value?.supported_nr_fdd_bands || []],
   ['NR TDD', 'nr_tdd_bands', bandStatus.value?.supported_nr_tdd_bands || []],
 ])
+const locationCells = computed(() => {
+  if (cellLocation.value?.cells?.length) return cellLocation.value.cells
+  const items = []
+  if (cellLocation.value?.cell_info) items.push(cellLocation.value.cell_info)
+  return [...items, ...(cellLocation.value?.neighbor_cells || [])]
+})
+
+function cellArfcn(row) {
+  const value = row?.arfcn ?? row?.earfcn ?? row?.nrarfcn
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function rowKey(row) {
+  return `${row.tech || 'cell'}-${cellArfcn(row) ?? 'na'}-${row.pci ?? 'na'}`
+}
 
 async function load(background = false) {
   if (!background) loading.value = true
   const calls = await Promise.allSettled([
     api.getNetworkInfo(), api.getCellsInfo(), api.getSignalStrength(), api.getRadioMode(),
     api.getBandLockStatus(), api.getCellLockStatus(), api.getApnList(), api.getConnectivity(),
+    api.getCellLocationInfo(), api.getOperators(),
   ])
   const assign = (index, setter) => { if (calls[index].status === 'fulfilled') setter(calls[index].value.data) }
   assign(0, (value) => { network.value = value })
@@ -95,6 +122,8 @@ async function load(background = false) {
   assign(5, (value) => { cellLock.value = value })
   assign(6, (value) => { apns.value = value?.contexts || [] })
   assign(7, (value) => { connectivity.value = value })
+  assign(8, (value) => { cellLocation.value = value })
+  assign(9, (value) => { if (!operators.value.length) operators.value = value?.operators || [] })
   const failure = calls.find((result) => result.status === 'rejected')
   if (failure && !network.value && !background) error.value = errorMessage(failure.reason)
   loading.value = false
@@ -149,6 +178,13 @@ function saveBands() {
 function saveCellLock() {
   runAction('cell', () => api.setCellLock({ ...cellForm }), '小区锁定已更新')
 }
+function lockFromCell(row) {
+  const arfcn = cellArfcn(row)
+  const pci = Number(row.pci)
+  if (arfcn === null || !Number.isFinite(pci)) return
+  const rat = String(row.tech || '').toLowerCase().includes('nr') ? 6 : 4
+  runAction(`cell-${rowKey(row)}`, () => api.setCellLock({ rat, enable: true, lock_type: 1, pci, arfcn }), `已锁定 ${row.tech || ''} 小区`)
+}
 function unlockCells() {
   dialog.warning({
     title: '解除所有小区锁定', content: '设备将恢复自动选择服务小区。', positiveText: '解除锁定', negativeText: '取消',
@@ -156,6 +192,23 @@ function unlockCells() {
   })
 }
 
+async function copyCellLocation() {
+  if (!locationCells.value.length) return
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(locationCells.value[0], null, 2))
+    message.success('基站定位参数已复制')
+  } catch (copyError) {
+    message.error(errorMessage(copyError))
+  }
+}
+
+onMounted(async () => {
+  try {
+    await api.startCellMonitor()
+  } catch (monitorError) {
+    message.warning(`小区监控启动失败：${errorMessage(monitorError)}`)
+  }
+})
 usePolling(load)
 onBeforeUnmount(() => api.stopCellMonitor().catch(() => {}))
 </script>
@@ -173,9 +226,23 @@ onBeforeUnmount(() => api.stopCellMonitor().catch(() => {}))
 
     <NTabs v-model:value="tab" type="line" animated>
       <NTabPane name="overview" tab="小区状态">
-        <NCard class="section-card">
-          <NDataTable :columns="cellColumns" :data="cells" :loading="loading" :scroll-x="980" :pagination="{ pageSize: 12 }" />
-        </NCard>
+        <div class="panel-grid">
+          <NCard class="section-card panel--wide" title="小区列表">
+            <NDataTable :columns="cellColumns" :data="cells" :loading="loading" :scroll-x="1070" :pagination="{ pageSize: 12 }" />
+          </NCard>
+          <NCard class="section-card panel--narrow" title="基站定位参数">
+            <template #header-extra><NButton quaternary circle aria-label="复制基站定位参数" :disabled="!locationCells.length" @click="copyCellLocation"><template #icon><Copy :size="16" /></template></NButton></template>
+            <div v-if="locationCells.length" class="description-grid">
+              <div class="description-item"><span>MCC / MNC</span><strong>{{ locationCells[0].mcc }} / {{ locationCells[0].mnc }}</strong></div>
+              <div class="description-item"><span>制式</span><strong>{{ locationCells[0].radio_type || '--' }}</strong></div>
+              <div class="description-item"><span>LAC / TAC</span><strong>{{ locationCells[0].lac ?? '--' }}</strong></div>
+              <div class="description-item"><span>Cell ID</span><strong>{{ locationCells[0].cid ?? '--' }}</strong></div>
+              <div class="description-item"><span>ARFCN / PCI</span><strong>{{ locationCells[0].arfcn ?? '--' }} / {{ locationCells[0].pci ?? '--' }}</strong></div>
+              <div class="description-item"><span>信号</span><strong>{{ locationCells[0].signal_strength ?? '--' }}</strong></div>
+            </div>
+            <div v-else class="empty-state">暂无基站定位数据</div>
+          </NCard>
+        </div>
       </NTabPane>
       <NTabPane name="apn" tab="APN">
         <NCard class="section-card">

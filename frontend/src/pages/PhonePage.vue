@@ -74,6 +74,7 @@ function dial() {
 }
 function answer(path) { action('answer', () => api.answerCall(path), '通话已接听') }
 function hangup(path) { action('hangup', () => api.hangupCall(path), '通话已挂断') }
+function hangupAll() { action('hangup-all', () => api.hangupAllCalls(), '所有通话已挂断') }
 function removeHistory(id) { action('delete', () => api.deleteCallRecord(id), '记录已删除') }
 function setWaiting(value) { action('waiting', () => api.setCallWaiting(value), '呼叫等待已更新') }
 function clearHistory() { action('clear', () => api.clearCallHistory(), '通话记录已清空') }
@@ -98,6 +99,12 @@ usePolling(load)
         </div>
       </NCard>
       <NCard class="section-card panel--full" title="当前通话">
+        <template #header-extra>
+          <NPopconfirm v-if="calls.length" @positive-click="hangupAll">
+            <template #trigger><NButton type="error" secondary :loading="actionLoading === 'hangup-all'">挂断全部</NButton></template>
+            确定挂断当前全部通话？
+          </NPopconfirm>
+        </template>
         <NDataTable :columns="callColumns" :data="calls" :loading="loading" :scroll-x="780" />
       </NCard>
       <NCard class="section-card panel--full" title="通话记录">

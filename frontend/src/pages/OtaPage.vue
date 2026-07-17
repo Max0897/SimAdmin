@@ -4,8 +4,11 @@ import {
   NAlert,
   NButton,
   NCard,
+  NInput,
   NProgress,
+  NSelect,
   NSpace,
+  NSwitch,
   NTag,
   useDialog,
   useMessage,
@@ -25,11 +28,35 @@ const status = ref(null)
 const latest = ref(null)
 const prepared = ref(null)
 const selectedFile = ref(null)
-const proxyPrefix = ref('')
+const proxyEnabled = ref(true)
+const proxyPreset = ref('https://gh-proxy.com/')
+const customProxy = ref('')
 const uploadProgress = ref(0)
 const appVersion = __APP_VERSION__
 const gitCommit = __GIT_COMMIT__
 const releaseAsset = computed(() => latest.value?.assets?.find((asset) => asset.name.endsWith('.tar.gz') || asset.name.endsWith('.zip')) || latest.value?.assets?.[0])
+const proxyOptions = [
+  { label: 'gh-proxy.com', value: 'https://gh-proxy.com/' },
+  { label: 'ghproxy.net', value: 'https://ghproxy.net/' },
+  { label: 'githubproxy.cc', value: 'https://githubproxy.cc/' },
+  { label: '自定义', value: 'custom' },
+]
+const proxyPrefix = computed(() => {
+  if (!proxyEnabled.value) return ''
+  if (proxyPreset.value !== 'custom') return proxyPreset.value
+  const value = customProxy.value.trim()
+  return value && !value.endsWith('/') ? `${value}/` : value
+})
+const validationItems = computed(() => {
+  if (!prepared.value?.validation) return []
+  const validation = prepared.value.validation
+  return [
+    ['版本', validation.is_newer, prepared.value.meta?.version || '--'],
+    ['目标架构', validation.arch_match, prepared.value.meta?.arch || '--'],
+    ['后端二进制 MD5', validation.binary_md5_match, prepared.value.meta?.binary_md5 || '--'],
+    ['前端资源 MD5', validation.frontend_md5_match, prepared.value.meta?.frontend_md5 || '--'],
+  ]
+})
 
 async function load() {
   loading.value = true
@@ -115,12 +142,23 @@ load()
 
     <div class="panel-grid">
       <NCard class="section-card panel--full" title="在线更新">
+        <div class="form-section ota-proxy-settings">
+          <div class="form-section__header"><div><strong>GitHub 下载加速</strong><span>{{ proxyPrefix || '直连 GitHub' }}</span></div><NSwitch v-model:value="proxyEnabled" /></div>
+          <div v-if="proxyEnabled" class="inline-form" style="margin-top: 12px">
+            <NSelect v-model:value="proxyPreset" :options="proxyOptions" />
+            <NInput v-if="proxyPreset === 'custom'" v-model:value="customProxy" placeholder="https://proxy.example.com/" />
+          </div>
+        </div>
         <div class="toolbar">
           <div>
             <strong>{{ latest?.name || latest?.tag_name || 'GitHub Release' }}</strong>
             <div class="table-cell-sub">{{ releaseAsset ? `${releaseAsset.name} · ${formatBytes(releaseAsset.size)}` : '尚未检查在线版本' }}</div>
           </div>
           <NSpace><NButton secondary :loading="actionLoading === 'latest'" @click="getLatest"><template #icon><RefreshCw :size="16" /></template>检查更新</NButton><NButton type="primary" :disabled="!latest" :loading="actionLoading === 'prepare'" @click="prepareOnline"><template #icon><DownloadCloud :size="16" /></template>下载并校验</NButton></NSpace>
+        </div>
+        <div v-if="latest" class="release-notes">
+          <div class="release-notes__header"><strong>Release Notes</strong><NTag size="small">{{ latest.tag_name }}</NTag></div>
+          <div class="release-notes__body">{{ latest.body || '本次发布未提供更新说明。' }}</div>
         </div>
       </NCard>
 
@@ -141,6 +179,11 @@ load()
           <div class="description-item"><span>Commit</span><strong class="mono">{{ prepared?.meta?.commit || status?.pending_meta?.commit || '--' }}</strong></div>
           <div class="description-item"><span>架构</span><strong>{{ prepared?.meta?.arch || status?.pending_meta?.arch || '--' }}</strong></div>
           <div class="description-item"><span>构建时间</span><strong>{{ prepared?.meta?.build_time || status?.pending_meta?.build_time || '--' }}</strong></div>
+        </div>
+        <div v-if="validationItems.length" class="validation-list">
+          <div v-for="item in validationItems" :key="item[0]" class="validation-row">
+            <span>{{ item[0] }}</span><strong class="mono">{{ item[2] }}</strong><NTag size="small" :type="item[1] ? 'success' : 'error'">{{ item[1] ? '通过' : '未通过' }}</NTag>
+          </div>
         </div>
         <NSpace justify="end" style="margin-top: 16px"><NButton type="error" secondary :loading="actionLoading === 'cancel'" @click="cancelUpdate">清除更新包</NButton><NButton secondary :loading="actionLoading === 'apply'" @click="applyUpdate(false)">应用更新</NButton><NButton type="primary" :loading="actionLoading === 'apply'" @click="applyUpdate(true)">更新并重启</NButton></NSpace>
       </NCard>
