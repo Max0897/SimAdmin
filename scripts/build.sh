@@ -51,9 +51,9 @@ print_windows_notice() {
 
 check_windows_node_lifecycle() {
     if is_windows_bash && ! cmd.exe //c node -v >/dev/null 2>&1; then
-        echo "❌ 错误: 当前 Git Bash 环境下，Node.js 无法被 npm/pnpm 生命周期脚本识别。"
+        echo "❌ 错误: 当前 Git Bash 环境下，Node.js 无法被 Yarn 生命周期脚本识别。"
         echo "请改用 WSL2 运行完整 OTA 构建，或修正 Git Bash/Windows PATH 后再执行。"
-        echo "也可以在原生 PowerShell 中单独运行前端构建: pnpm build"
+        echo "也可以在原生 PowerShell 中单独运行前端构建: yarn build"
         exit 1
     fi
 }
@@ -135,12 +135,12 @@ if [ "$BUILD_FRONTEND" = true ]; then
     require_cmd node "请先安装 Node.js，并确认 node 在当前 Bash 环境的 PATH 中。Windows/Git Bash 下如使用 nvm-windows，请检查 Git Bash 的 PATH；完整 OTA 推荐在 WSL2 中构建。"
     check_windows_node_lifecycle
 
-    if [ -f "pnpm-lock.yaml" ]; then
-        require_cmd pnpm "请先安装 pnpm。推荐: corepack enable && corepack prepare pnpm@9 --activate"
-        echo "📦 同步前端依赖 (pnpm)..."
-        pnpm install --frozen-lockfile
-        pnpm run lint
-        pnpm exec vite build
+    if [ -f "yarn.lock" ]; then
+        require_cmd yarn "请先安装 Yarn Classic。推荐: corepack enable"
+        echo "📦 同步前端依赖 (Yarn)..."
+        yarn install --frozen-lockfile
+        yarn run lint
+        yarn vite build
     else
         require_cmd npm "请先安装 Node.js 和 npm。"
         echo "📦 同步前端依赖 (npm)..."

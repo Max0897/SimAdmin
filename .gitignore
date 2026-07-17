@@ -7,8 +7,8 @@ target/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
-# 保留 pnpm-lock.yaml，移除其他包管理器的 lockfile
-frontend/yarn.lock
+# 保留 yarn.lock，移除其他包管理器的 lockfile
+frontend/pnpm-lock.yaml
 frontend/package-lock.json
 
 # macOS

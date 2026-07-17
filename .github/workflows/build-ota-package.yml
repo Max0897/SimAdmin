@@ -166,32 +166,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-      
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-      
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
       
       # ==================== 构建前端 ====================
       - name: Build frontend
         working-directory: frontend
         run: |
           echo "🎨 构建前端..."
-          pnpm install --frozen-lockfile
-          pnpm run build
+          yarn install --frozen-lockfile
+          yarn build
           
           echo "✅ 前端构建完成！"
           ls -lh dist/

@@ -5,7 +5,7 @@
 ```text
 .
 ├── backend/          # Rust + Axum 后端，ModemManager、SQLite、OTA、通知、系统接口
-├── frontend/         # React + Vite + MUI 前端
+├── frontend/         # Vue 3 + Vite + Naive UI 前端
 ├── bruno-api/        # Bruno API 调试集合
 ├── scripts/          # 构建、部署、systemd、modem 恢复脚本
 ├── install_latest.sh # 设备侧一键安装 / 升级脚本
@@ -20,15 +20,15 @@
 
 ```bash
 cd frontend
-pnpm install
-pnpm dev
+yarn install
+yarn dev
 ```
 
 ### 构建前端
 
 ```bash
 cd frontend
-pnpm run build
+yarn build
 ```
 
 前端构建产物输出到 `frontend/dist/`，部署后会复制为 `/opt/simadmin/www/`。
@@ -71,7 +71,7 @@ cargo run -- --host :: --port 3000
 ./scripts/build.sh --no-ota
 ```
 
-*Windows 下建议在 WSL2 Ubuntu 中执行完整 OTA 构建。原生 PowerShell 不能直接运行 Bash 脚本；Git Bash 容易受 Node/npm/pnpm PATH 影响，完整 OTA 仍需要 `aarch64-unknown-linux-musl-gcc` 等 Linux 交叉编译工具链：*
+*Windows 下建议在 WSL2 Ubuntu 中执行完整 OTA 构建。原生 PowerShell 不能直接运行 Bash 脚本；Git Bash 容易受 Node/Yarn PATH 影响，完整 OTA 仍需要 `aarch64-unknown-linux-musl-gcc` 等 Linux 交叉编译工具链：*
 
 ```bash
 ./scripts/build.sh --no-upx
@@ -80,7 +80,7 @@ cargo run -- --host :: --port 3000
 #### 构建脚本动作说明
 
 - 同步 `VERSION` 到 `backend/Cargo.toml` 和 `frontend/package.json`。
-- 使用 `pnpm-lock.yaml` 时通过 `pnpm install --frozen-lockfile`、`pnpm run lint` 和 `pnpm exec vite build` 构建前端到 `frontend/dist/`。
+- 使用 `yarn.lock` 通过 `yarn install --frozen-lockfile` 和 `yarn build` 构建前端到 `frontend/dist/`。
 - 交叉编译后端到 `backend/target/aarch64-unknown-linux-musl/release/simadmin`。
 - 可选使用 UPX 压缩后端二进制；未安装 UPX 时会自动跳过压缩。
 - 生成 `release/simadmin_<version>.tar.gz` OTA 包。
@@ -109,24 +109,22 @@ cargo run -- --host :: --port 3000
 - 管理后台页面和 `/api/*` 业务接口默认需要登录；`/api/health`、`/api/auth/status`、`/api/auth/setup`、`/api/auth/login` 为公开接口。
 - 未登录访问受保护页面会跳转到 `/login`；前端 API 请求遇到 `401` 会自动进入登录页，直接调用 API 时返回标准 JSON 错误。
 - 会话使用 `simadmin_session` HttpOnly Cookie，默认有效期 7 天。重置或清除管理员密码会清空所有 Web 会话。
-- 当前不提供手动登出入口，适合单管理员设备后台场景。
+- 顶栏账户菜单提供手动退出入口。
 
 ### 前后端契约
 
 - 后端模型位于 `backend/src/models.rs`。
-- 前端类型位于 `frontend/src/api/contracts.ts`。
-- 前端 API 封装位于 `frontend/src/api/current.ts`。
-- 路由集中在 `backend/src/main.rs` 和 `frontend/src/App.tsx`。
+- 前端 API 封装位于 `frontend/src/api/index.js`。
+- 路由集中在 `backend/src/main.rs` 和 `frontend/src/router/index.js`。
 
 新增接口时建议同步修改：
 
 1. `backend/src/models.rs`
 2. `backend/src/handlers.rs`
 3. `backend/src/main.rs`
-4. `frontend/src/api/contracts.ts`
-5. `frontend/src/api/current.ts`
-6. 对应页面或 hook
-7. `bruno-api/` 调试请求 (详情请参阅 [Bruno 接口文档](../bruno-api/README.md))
+4. `frontend/src/api/index.js`
+5. 对应 Vue 页面或 composable
+6. `bruno-api/` 调试请求 (详情请参阅 [Bruno 接口文档](../bruno-api/README.md))
 
 ### D-Bus 操作序列化
 
