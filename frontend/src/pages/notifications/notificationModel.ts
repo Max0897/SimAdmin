@@ -342,7 +342,7 @@ export function defaultChannelConfig(type: NotificationChannelKey): Record<strin
     case 'feishu_robot':
       return { webhook_url: '', token: '', secret: '' }
     case 'telegram':
-      return { bot_token: '', chat_id: '', parse_mode: '', disable_web_page_preview: true }
+      return { api_base_url: '', bot_token: '', chat_id: '', parse_mode: '', disable_web_page_preview: true }
     case 'email':
       return {
         smtp_host: '',

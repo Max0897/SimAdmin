@@ -682,6 +682,7 @@ export interface FeishuRobotConfig extends MessageChannelConfig {
 }
 
 export interface TelegramConfig extends MessageChannelConfig {
+  api_base_url: string
   bot_token: string
   chat_id: string
   parse_mode: string

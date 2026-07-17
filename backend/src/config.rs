@@ -191,6 +191,8 @@ pub struct FeishuRobotConfig {
 pub struct TelegramConfig {
     #[serde(flatten)]
     pub common: MessageChannelConfig,
+    #[serde(default = "default_telegram_api_base_url")]
+    pub api_base_url: String,
     #[serde(default)]
     pub bot_token: String,
     #[serde(default)]
@@ -749,6 +751,10 @@ fn default_wecom_api_base_url() -> String {
     "https://qyapi.weixin.qq.com".to_string()
 }
 
+fn default_telegram_api_base_url() -> String {
+    String::new()
+}
+
 fn default_dingtalk_msg_key() -> String {
     "sampleText".to_string()
 }
@@ -901,6 +907,7 @@ impl Default for TelegramConfig {
     fn default() -> Self {
         Self {
             common: MessageChannelConfig::default(),
+            api_base_url: default_telegram_api_base_url(),
             bot_token: String::new(),
             chat_id: String::new(),
             parse_mode: String::new(),

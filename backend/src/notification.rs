@@ -2282,10 +2282,7 @@ impl NotificationSender {
         if config.bot_token.trim().is_empty() || config.chat_id.trim().is_empty() {
             return Err("Telegram Bot Token 或 Chat ID 未配置".to_string());
         }
-        let url = format!(
-            "https://api.telegram.org/bot{}/sendMessage",
-            config.bot_token.trim()
-        );
+        let url = telegram_send_message_url(config);
         let mut payload = Map::new();
         payload.insert("chat_id".to_string(), json!(config.chat_id.trim()));
         payload.insert("text".to_string(), json!(text));
@@ -3247,6 +3244,24 @@ fn wecom_api_base_url(config: &WecomAppConfig) -> String {
     base.trim_end_matches('/').to_string()
 }
 
+fn telegram_api_base_url(config: &TelegramConfig) -> String {
+    let configured = config.api_base_url.trim();
+    let base = if configured.is_empty() {
+        "https://api.telegram.org"
+    } else {
+        configured
+    };
+    base.trim_end_matches('/').to_string()
+}
+
+fn telegram_send_message_url(config: &TelegramConfig) -> String {
+    format!(
+        "{}/bot{}/sendMessage",
+        telegram_api_base_url(config),
+        config.bot_token.trim()
+    )
+}
+
 fn format_channel_errcode(label: &str, errcode: i64, message: &str) -> String {
     if errcode == 60020 {
         return format!(
@@ -4029,6 +4044,25 @@ mod tests {
 
         config.api_base_url = " ".to_string();
         assert_eq!(wecom_api_base_url(&config), "https://qyapi.weixin.qq.com");
+    }
+
+    #[test]
+    fn builds_telegram_send_message_url_from_api_base_url() {
+        let mut config = TelegramConfig::default();
+        config.bot_token = "123456:abcdef".to_string();
+        assert_eq!(
+            telegram_send_message_url(&config),
+            "https://api.telegram.org/bot123456:abcdef/sendMessage"
+        );
+
+        config.api_base_url = " https://relay.example.com/telegram/ ".to_string();
+        assert_eq!(
+            telegram_send_message_url(&config),
+            "https://relay.example.com/telegram/bot123456:abcdef/sendMessage"
+        );
+
+        config.api_base_url = " ".to_string();
+        assert_eq!(telegram_api_base_url(&config), "https://api.telegram.org");
     }
 
     #[test]
